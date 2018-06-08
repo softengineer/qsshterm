@@ -57,6 +57,11 @@ void QSSHTerm::start() {
 
     connect(this, SIGNAL(copyAvailable(bool)), this, SLOT(copySelect()));
 
+    connect(this, SIGNAL(connect_to()), session, SLOT(connect_to()));
+    connect(this, SIGNAL(reconnect()), session, SLOT(reconnect()));
+    connect(this, SIGNAL(disconnect()), session, SLOT(disconnect()));
+    connect(this, SIGNAL(reset()), session, SLOT(reset()));
+
     thread->start();
 }
 
@@ -73,6 +78,7 @@ QSSHSession::QSSHSession( QObject *parent , QSSHTerm * term)
 }
 
 void QSSHSession::resizeEvent(const int width, const int height) {
+  qDebug()<<"resize event received :" << width << "," << height;
     if (this->channel) {
         ssh_channel_change_pty_size(channel,width, height);
     }
@@ -224,12 +230,8 @@ int QSSHSession::authenticate_console(ssh_session session){
 
     char *passwd = "Password: ";
     emit sendData(passwd, strlen(passwd));
-    // if (ssh_getpass(passwd, password, sizeof(password), 0, 0) < 0) {
-    //     return SSH_AUTH_ERROR;
-    // }
 
     // Try to authenticate with password
-    qDebug() << qterm->siteInfo.password;
     if (method & SSH_AUTH_METHOD_PASSWORD) {
       if (!qterm->siteInfo.password.isNull()) {
 
@@ -296,6 +298,23 @@ void QSSHSession::shell(ssh_session session){
     read_notifier->setEnabled(true);
     connect(read_notifier, SIGNAL(activated(int)),
             this, SLOT(select_loop(int)));
+}
+
+void QSSHSession::reconnect() {
+   disconnect();
+   connect_to();
+}
+
+void QSSHSession::disconnect() {
+    ssh_channel_free(channel);
+    ssh_disconnect(session);
+    ssh_free(session);
+    ssh_finalize();
+    qDebug() << "SSH session close ...";
+}
+
+void QSSHSession::reset() {
+    reconnect();
 }
 
 

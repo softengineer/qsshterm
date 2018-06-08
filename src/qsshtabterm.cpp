@@ -29,6 +29,9 @@ void qsshTabTerm::init() {
 }
 
 void qsshTabTerm::closeTab(int index) {
+    QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
+    emit term->disconnect();
+    tabs->removeTab(index);
     qDebug() << "close event trigger " << index;
 }
 

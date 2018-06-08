@@ -35,7 +35,7 @@ SOURCES += \
     src/qsiteconfig.cpp
     
 HEADERS += \
-	qsshtabterm.h \
+    src/qsshtabterm.h \
     src/qsshterm.h \
     src/qsshtabterm.h \
     src/qsiteconfig.h \
@@ -44,3 +44,12 @@ HEADERS += \
 LIBS += -lqtermwidget5
 LIBS += -lssh
 LIBS += -lssh_threads
+
+release: DESTDIR = ./
+         TEMPDIR = build/release
+debug:   DESTDIR = ./
+         TEMPDIR = build/debug
+OBJECTS_DIR = $$TEMPDIR/.obj
+MOC_DIR = $$TEMPDIR/.moc
+RCC_DIR = $$TEMPDIR/.qrc
+UI_DIR = $$TEMPDIR/.ui

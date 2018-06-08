@@ -33,7 +33,16 @@ public:
 public slots:
 	void readData(const char *data, int size);
 
-	signals:
+signals:
+    void reconnect();
+
+    /**
+      open ssh session, connect to host
+    */
+    void connect_to();
+    void disconnect();
+    void reset();
+
 	void sendByteArray(const QByteArray array);
     void resizeSshWindow(const int width, const int height);
 
@@ -83,6 +92,13 @@ class QSSHSession :public QObject {
     /**
     * try to connect host again
     */
+   
+public slots:
+    void process();
+    void readByteArray(const QByteArray array);
+    void log(QString msg);
+    void resizeEvent(const int width, const int height);
+
     void reconnect();
 
     /**
@@ -91,12 +107,6 @@ class QSSHSession :public QObject {
     void connect_to();
     void disconnect();
     void reset();
-
-public slots:
-    void process();
-    void readByteArray(const QByteArray array);
-    void log(QString msg);
-    void resizeEvent(const int width, const int height);
 
 signals:
     void finished();
