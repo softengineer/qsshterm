@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?> 
+<sites>
+	<folder name = "SSH session group">
+		<site name = "VM machine">
+			<host address = "localhost" port = "22"/>
+			<username>anonymous</username>
+			<password>anonymous</password>
+		</site>
+	</folder>
+	
+</sites>
