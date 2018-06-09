@@ -1,6 +1,7 @@
 #ifndef SITETREE_H
 #define SITETREE_H
 
+#include <QMainWindow>
 #include <QDomDocument>
 #include <QIcon>
 #include <QTreeWidget>
@@ -77,6 +78,8 @@ public:
     void notifyNewSession(SiteInfo);
 
 private :
+    void initToolbar();
+    QToolBar * toolbar;
     SiteTree * tree;
 };
 

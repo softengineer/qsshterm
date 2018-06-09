@@ -6,7 +6,9 @@ int main(int argc, char *argv[])
     int height = 800;
     int width = 600;
     QApplication a(argc, argv);
+    QIcon icon("./icon/qsshterm.ico"); 
     qsshTabTerm *window = new qsshTabTerm();
+    window->setWindowIcon(icon);
     window->resize(height, width);
     window->show();
     return a.exec();

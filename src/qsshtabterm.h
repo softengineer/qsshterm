@@ -26,6 +26,9 @@ class qsshTabTerm: public QMainWindow {
 
       void init();
 
+  protected :
+    bool eventFilter(QObject *obj, QEvent *ev);
+
   public slots:
       void openSession(SiteInfo);
 
@@ -36,6 +39,7 @@ class qsshTabTerm: public QMainWindow {
      	void initToolbar();
      	void showSessionMgrDialog();  
       void showAboutDialog();
+      void on_tab_rightMouse_pressed( int clickedItem, QPoint position );
 
   private slots:
       void closeTab(int);

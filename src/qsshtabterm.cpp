@@ -17,22 +17,82 @@ void qsshTabTerm::init() {
     QGridLayout *gridLayout = new QGridLayout(centralWidget);
 
     gridLayout->addWidget(tabs,0,0,1,1);
-    //tabs->setFixedSize(height, width);
     this->setCentralWidget(centralWidget);
-
+    tabs->installEventFilter(this);
     showSessionMgrDialog();
-    //  QSSHTerm *term = new QSSHTerm();
-    // int idx = tabs->addTab(term,"sshSession1");
-    // term->setTabIndex(idx);
-    // term->start();
-    //tabs->setTabIcon(idx, icon);
+ 
+}
+
+bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
+        if (obj != tabs)
+                return QObject::eventFilter(obj, event);
+
+        
+ 
+        if (event->type() != QEvent::MouseButtonPress)
+                return QObject::eventFilter(obj, event);
+ 
+        // compute the tab number
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+        QPoint position = mouseEvent->pos();
+        int c = tabs->tabBar()->count();
+        int clickedItem = -1;
+ 
+        for (int i=0; i<c; i++)
+        {
+                if ( tabs->tabBar()->tabRect(i).contains( position ) )
+                {
+                        clickedItem = i;
+                        break;
+                }
+        }
+ 
+        // just in case
+        if (clickedItem == -1)
+                return QObject::eventFilter(obj, event);
+ 
+        switch( mouseEvent->button() )
+        {
+                case Qt::LeftButton:
+                        return QObject::eventFilter(obj, event);
+                        break;
+ 
+                case Qt::RightButton:
+                        on_tab_rightMouse_pressed( clickedItem, position );
+                        break;
+ 
+                case Qt::MidButton:
+                        return QObject::eventFilter(obj, event);
+                        break;
+ 
+                default:
+                        return QObject::eventFilter(obj, event);
+        }
+ 
+        return true;
 }
 
 void qsshTabTerm::closeTab(int index) {
     QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
     emit term->disconnect();
     tabs->removeTab(index);
-    qDebug() << "close event trigger " << index;
+}
+
+void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
+   qDebug() << "tab is clicked!";
+   QMenu contextMenu(tr("Context menu"), tabs);
+
+   QAction closeAct("Close", tabs);
+   QAction resetAct("Reset", tabs);
+   QAction connectAct("Connect", tabs);
+   QAction duplicateAct("Duplicate", tabs);
+   //connect(&action1, SIGNAL(triggered()), this, SLOT(removeDataPoint()));
+   contextMenu.addAction(&duplicateAct);
+   contextMenu.addAction(&connectAct);
+   contextMenu.addAction(&resetAct);
+   contextMenu.addAction(&closeAct);
+
+   contextMenu.exec(tabs->mapToGlobal(pos));
 }
 
 void qsshTabTerm::initMenu() {
@@ -67,7 +127,7 @@ void qsshTabTerm::showSessionMgrDialog() {
 }
 
 void qsshTabTerm::showAboutDialog() {
-    QMessageBox::information(NULL, "About", "QSSHTerm V0.1 \n Author: david.fan", QMessageBox::Ok, QMessageBox::Ok);
+    QMessageBox::information(NULL, "About", "QSSHTerm V0.1 \nAuthor: david.fan \nLicense: LGPL V3.0 ", QMessageBox::Ok, QMessageBox::Ok);
 }
 
 void qsshTabTerm::openSession(SiteInfo info) {
@@ -76,6 +136,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
     term->setTabIndex(idx);
     term->start();
     tabs->setCurrentIndex(idx);
+    term->setFocus();
     sessionMgr_dialog->hide();
     QIcon icon("./icon/green.ico"); 
     tabs->setTabIcon(idx, icon);

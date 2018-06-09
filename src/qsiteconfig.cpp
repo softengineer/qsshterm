@@ -213,9 +213,27 @@ QTreeWidgetItem *SiteTree::createItem(const QDomElement &element,
 QSiteTreeDialog::QSiteTreeDialog(QWidget *parent) 
 {
    tree = new SiteTree(this);
-   this->setWindowTitle(QString::fromUtf8("SSH Session Manager"));
-   QGridLayout *gridLayout = new QGridLayout(this);
+   QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-   gridLayout->addWidget(tree,0,0,1,1);
+   toolbar = new QToolBar();
+   mainLayout->addWidget(toolbar);
+   mainLayout->addWidget(tree);
+
+   this->setWindowTitle(QString::fromUtf8("SSH Session Manager"));
+   //QGridLayout *gridLayout = new QGridLayout(this);
+
+   //gridLayout->addWidget(tree,0,0,1,1);
+   initToolbar();
    resize(400, 300);
+}
+
+void QSiteTreeDialog::initToolbar() {
+    
+    QIcon newicon("./icon/new.ico"); 
+    QIcon editicon("./icon/edit.ico"); 
+    QIcon deleteicon("./icon/delete.ico"); 
+    QAction * newAct = toolbar->addAction(newicon, "new");
+    QAction * editAct = toolbar->addAction(editicon, "edit");
+    QAction * deleteAct = toolbar->addAction(deleteicon, "delete");
+    //connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
 }

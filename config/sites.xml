@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="UTF-8" ?> 
 <sites>
-	<folder name = "SSH session group">
-		<site name = "VM machine">
+	<folder name = "Cosmoline group">
+		<site name = "dev server">
+			<host address = "dev.cosmoline.cloud" port = "22"/>
+			<username>ubuntu</username>
+			<privatekey file = "/home/davidfan/Work/Aws/ec2.pem"/>
+		</site>
+		<site name = "demo server">
+			<host address = "dev.cosmoline.cloud" port = "22"/>
+			<username>ubuntu</username>
+			<privatekey file = "/home/davidfan/Work/Aws/ec2.pem"/>
+		</site>
+		<site name = "production server">
+			<host address = "cosmoline.cloud" port = "22"/>
+			<username>ubuntu</username>
+			<privatekey file = "/home/davidfan/Work/Aws/ec2.pem"/>
+		</site>
+		<site name = "davidfan VM machine">
 			<host address = "localhost" port = "22"/>
-			<username>anonymous</username>
-			<password>anonymous</password>
+			<username>davidfan</username>
+			<password>minhaof</password>
 		</site>
 	</folder>
-	
+	<folder name = "Haier Group">
+		<site name = "10.138.22.37">
+			<host address = "10.138.22.37" port = "22"/>
+			<username>haieradmin</username>
+			<privatekey file = "/home/davidfan/Work/Aws/ec2.pem"/>
+		</site>
+	</folder>
 </sites>

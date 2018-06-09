@@ -21,13 +21,13 @@ class QSSHSession;
 class QSSHTerm : public QTermWidget
 {
     Q_OBJECT
-
 public:
     QSSHTerm(SiteInfo info, QWidget * parent = 0);
     void setTabIndex(const int idx) {
         this->index = idx;
     }
     void start();
+    void changeFont();
     SiteInfo siteInfo;
 
 public slots:
@@ -54,6 +54,7 @@ protected:
 private:
 	QSSHSession *session;
     int index;
+    
     
 private slots:
     void copySelect();

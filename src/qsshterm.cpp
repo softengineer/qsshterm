@@ -6,6 +6,10 @@ QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
     : QTermWidget(0,parent), index(-1), siteInfo(info)
 {  
   this->setColorScheme("Ubuntu");
+  changeFont();
+}
+
+void QSSHTerm::changeFont() {
   QFont font = QApplication::font();
   #ifdef Q_WS_MAC
       font.setFamily("Monaco");
@@ -78,9 +82,18 @@ QSSHSession::QSSHSession( QObject *parent , QSSHTerm * term)
 }
 
 void QSSHSession::resizeEvent(const int width, const int height) {
-  qDebug()<<"resize event received :" << width << "," << height;
+    qDebug()<<"resize event received :" << width << "," << height;
+    qterm->changeFont();
+    int wwidth = qterm->screenColumnsCount();
+    int wheight = qterm->screenLinesCount();
+    qDebug() << "current window wwidth / wheight value" << wwidth << "/" << wheight;
+    if (width == 1 || height == 1) {
+      qDebug() << "Received invalid width / height value" << width << "/" << height;
+      return;
+    }
+    
     if (this->channel) {
-        ssh_channel_change_pty_size(channel,width, height);
+        ssh_channel_change_pty_size(channel,wwidth, wheight);
     }
 }
 
@@ -289,7 +302,10 @@ void QSSHSession::shell(ssh_session session){
         return;
     }
     qterm->setTerminalSizeHint(true);
-   // ssh_channel_change_pty_size(channel,width, height);
+    int width = qterm->screenColumnsCount();
+    int height = qterm->screenLinesCount();
+    qDebug() << "open session :"<<width <<"," << height;
+    ssh_channel_change_pty_size(channel,width, height);
 
     socket_t socket = ssh_get_fd(session);
     read_notifier = new QSocketNotifier(socket,
@@ -306,11 +322,12 @@ void QSSHSession::reconnect() {
 }
 
 void QSSHSession::disconnect() {
+    read_notifier->setEnabled(false);
     ssh_channel_free(channel);
     ssh_disconnect(session);
     ssh_free(session);
     ssh_finalize();
-    qDebug() << "SSH session close ...";
+    qDebug() << "SSH session is closing ...";
 }
 
 void QSSHSession::reset() {
