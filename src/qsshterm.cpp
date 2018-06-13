@@ -28,6 +28,11 @@ void QSSHTerm::readData(const char * d, int size) {
     emit sendByteArray(data);
 }
 
+void QSSHTerm::sendChangeIcon() {
+  emit icon_change(index, true);
+}
+
+
 void QSSHTerm::start() {
      session = new QSSHSession(NULL, this);
 
@@ -45,6 +50,7 @@ void QSSHTerm::start() {
 
     // Read anything from remote terminal via socket and show it on widget.
     connect(session,&QSSHSession::sendData,[this](const char *data, int size){
+        this->sendChangeIcon();
         write(this->getPtySlaveFd(), data, size);
     });
 
@@ -291,6 +297,7 @@ int QSSHSession::select_loop(int j){
 
 void QSSHSession::shell(ssh_session session){
     this->channel = ssh_channel_new(session);
+    ssh_channel_accept_x11(channel, 10);
     if(ssh_channel_open_session(channel)){
         printf("error opening channel : %s\n",ssh_get_error(session));
         return;

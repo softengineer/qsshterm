@@ -16,6 +16,7 @@
 #include "qsiteconfig.h"
 
 class QSSHSession;
+class qsshTabTerm;
 
 
 class QSSHTerm : public QTermWidget
@@ -34,6 +35,7 @@ public slots:
 	void readData(const char *data, int size);
 
 signals:
+    void icon_change(int index, bool isBusy);
     void reconnect();
 
     /**
@@ -42,7 +44,6 @@ signals:
     void connect_to();
     void disconnect();
     void reset();
-
 	void sendByteArray(const QByteArray array);
     void resizeSshWindow(const int width, const int height);
 
@@ -54,8 +55,9 @@ protected:
 private:
 	QSSHSession *session;
     int index;
-    
-    
+    void sendChangeIcon();
+
+
 private slots:
     void copySelect();
 };

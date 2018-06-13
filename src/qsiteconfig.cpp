@@ -57,13 +57,13 @@ void SiteTree::contextMenuEvent(QContextMenuEvent *event)
         return;
     const QString url = item->text(1);
     QMenu contextMenu;
-    QAction *copyAction = contextMenu.addAction(tr("Copy Link to Clipboard"));
+    
     QAction *openAction = contextMenu.addAction(tr("Open"));
+    QAction *renameAction = contextMenu.addAction(tr("Rename"));
+    QAction *editAction = contextMenu.addAction(tr("Edit"));
+    QAction *deleteAction = contextMenu.addAction(tr("Delete"));
     QAction *action = contextMenu.exec(event->globalPos());
-    if (action == copyAction)
-        QGuiApplication::clipboard()->setText(url);
-    else if (action == openAction)
-        QDesktopServices::openUrl(QUrl(url));
+   
 }
 #endif // !QT_NO_CONTEXTMENU && !QT_NO_CLIPBOARD
 
@@ -232,8 +232,10 @@ void QSiteTreeDialog::initToolbar() {
     QIcon newicon("./icon/new.ico"); 
     QIcon editicon("./icon/edit.ico"); 
     QIcon deleteicon("./icon/delete.ico"); 
+    QIcon newfoldericon("./icon/new-folder.ico"); 
     QAction * newAct = toolbar->addAction(newicon, "new");
     QAction * editAct = toolbar->addAction(editicon, "edit");
     QAction * deleteAct = toolbar->addAction(deleteicon, "delete");
+    QAction * newFolderAct = toolbar->addAction(newfoldericon, "new folder");
     //connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
 }

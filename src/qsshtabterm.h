@@ -31,6 +31,8 @@ class qsshTabTerm: public QMainWindow {
 
   public slots:
       void openSession(SiteInfo);
+      void tabSelected(int);
+      void changeTabIcon(int index, bool isBusy);
 
   private:
       QTabWidget *tabs;

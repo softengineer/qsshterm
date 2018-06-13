@@ -13,7 +13,7 @@ void qsshTabTerm::init() {
                         }");
     tabs->setTabsClosable(true);
     connect(tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
-
+    connect(tabs, SIGNAL(currentChanged(int)), this, SLOT(tabSelected(int)));
     QGridLayout *gridLayout = new QGridLayout(centralWidget);
 
     gridLayout->addWidget(tabs,0,0,1,1);
@@ -21,6 +21,39 @@ void qsshTabTerm::init() {
     tabs->installEventFilter(this);
     showSessionMgrDialog();
  
+}
+
+void qsshTabTerm::changeTabIcon(int index, bool isBusy){
+    int idx = tabs->currentIndex() ;
+
+    QIcon tabIcon = tabs->tabIcon(index);
+
+    if (isBusy) {
+        if (idx == index)
+          return;
+
+       if (tabIcon.name() == "./icon/red.ico")
+          return;
+       else  {
+         QIcon icon("./icon/red.ico"); 
+         tabs->setTabIcon(index, icon);
+       }
+
+    } else {
+      if (tabIcon.name() == "./icon/green.ico")
+          return;
+       else  {
+         QIcon icon("./icon/green.ico"); 
+         tabs->setTabIcon(index, icon);
+       }
+    }
+}
+
+void qsshTabTerm::tabSelected(int idx) {
+        if (idx == -1)
+            return;
+
+        this->changeTabIcon(idx, false);
 }
 
 bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
@@ -75,6 +108,7 @@ bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
 void qsshTabTerm::closeTab(int index) {
     QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
     emit term->disconnect();
+    disconnect(term, 0, 0, 0);
     tabs->removeTab(index);
 }
 
@@ -131,8 +165,36 @@ void qsshTabTerm::showAboutDialog() {
 }
 
 void qsshTabTerm::openSession(SiteInfo info) {
+
+    QString labelTitle = info.sitename;
+    int maxIndex = 0;
+    for (int j = 0; j< tabs->count(); j++) {
+        QString title = tabs->tabText(j);
+        if (title.startsWith(labelTitle)) {
+            if (title == labelTitle)  {
+                maxIndex = 1;
+                continue;
+            } else {
+                QString possibleNumberPair = title.mid(labelTitle.length(), title.length() - labelTitle.length());
+                if (possibleNumberPair.startsWith("(") && possibleNumberPair.endsWith(")")) {
+                    QString number = possibleNumberPair.mid(1, possibleNumberPair.length() - 2);
+                    bool ok;
+                    int tabNumber = number.toInt(&ok, 10); 
+                    if (ok) {
+                        maxIndex = tabNumber + 1;
+                    }
+                }
+            }
+        }
+
+    }
+
+    if (maxIndex > 0) {
+        labelTitle = labelTitle + "(" + QString::number(maxIndex) + ")";
+    } 
+
     QSSHTerm *term = new QSSHTerm(info);
-    int idx = tabs->addTab(term, info.sitename);
+    int idx = tabs->addTab(term, labelTitle);
     term->setTabIndex(idx);
     term->start();
     tabs->setCurrentIndex(idx);
@@ -140,4 +202,5 @@ void qsshTabTerm::openSession(SiteInfo info) {
     sessionMgr_dialog->hide();
     QIcon icon("./icon/green.ico"); 
     tabs->setTabIcon(idx, icon);
+    connect(term, SIGNAL(icon_change(int, bool)), this, SLOT(changeTabIcon(int, bool)));
 }
