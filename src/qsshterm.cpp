@@ -3,7 +3,7 @@
 #include <QFont>
 
 QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
-    : QTermWidget(0,parent), index(-1), siteInfo(info)
+    : QTermWidget(0,parent), termKey(QString()), siteInfo(info)
 {  
   this->setColorScheme("Ubuntu");
   changeFont();
@@ -29,7 +29,7 @@ void QSSHTerm::readData(const char * d, int size) {
 }
 
 void QSSHTerm::sendChangeIcon() {
-  emit icon_change(index, true);
+  emit icon_change(this->termKey, true);
 }
 
 
@@ -77,14 +77,12 @@ void QSSHTerm::start() {
 
 void QSSHTerm::copySelect() 
 {
-  qDebug() <<"select is triggerred!";
   copyClipboard();
 }
 
 QSSHSession::QSSHSession( QObject *parent , QSSHTerm * term)
     : qterm(term), session(0), channel(0)
 {
-   
 }
 
 void QSSHSession::resizeEvent(const int width, const int height) {

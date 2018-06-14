@@ -34,46 +34,74 @@ SiteTree::SiteTree(QWidget *parent)
     setHeaderHidden(true);
     setEditTriggers(QAbstractItemView::NoEditTriggers);
     folderIcon.addFile("./icon/folder.icon");
-    QFile file;
-    file.setFileName("./config/sites.xml");  
-    file.open(QIODevice::ReadOnly | QIODevice::WriteOnly);  
+
+    xmlfile.setFileName("./config/sites.xml");  
+    xmlfile.open(QIODevice::ReadOnly | QIODevice::WriteOnly);  
     connect(this,SIGNAL(itemDoubleClicked(QTreeWidgetItem *, int)),this,SLOT(Ondoubleclicktree(QTreeWidgetItem *, int)));
-    read(file);
+    load();
 }
 
 void SiteTree::Ondoubleclicktree(QTreeWidgetItem *item, int column)
 {
     QVariant data = item->data(0, DomElementRole);
-    SiteInfo info = data.value<SiteInfo>();
+    TreeNode node = data.value<TreeNode>();
+    if (node.isFolder) {
+        return;
+    }
     QSiteTreeDialog * dialog = static_cast<QSiteTreeDialog*>(parent());
-    emit dialog->notifyNewSession(info);
+    emit dialog->notifyNewSession(node.siteInfo);
 }
 
 #if !defined(QT_NO_CONTEXTMENU) && !defined(QT_NO_CLIPBOARD)
 void SiteTree::contextMenuEvent(QContextMenuEvent *event)
 {
-    const QTreeWidgetItem *item = itemAt(event->pos());
-    if (!item)
-        return;
-    const QString url = item->text(1);
+
+    QTreeWidgetItem *item = itemAt(event->pos());
     QMenu contextMenu;
-    
-    QAction *openAction = contextMenu.addAction(tr("Open"));
-    QAction *renameAction = contextMenu.addAction(tr("Rename"));
-    QAction *editAction = contextMenu.addAction(tr("Edit"));
-    QAction *deleteAction = contextMenu.addAction(tr("Delete"));
+    if (item) {
+        QVariant data = item->data(0, DomElementRole);
+        TreeNode node = data.value<TreeNode>();
+        if (!item)
+            return;
+        const QString url = item->text(1);
+       
+        
+        if (!node.isFolder) {
+            QAction *openAction = contextMenu.addAction(tr("Open"));
+            QAction *renameAction = contextMenu.addAction(tr("Rename"));
+            QAction *newSiteAction = contextMenu.addAction(tr("New Site"));
+            QAction *editAction = contextMenu.addAction(tr("Edit"));
+            QAction *deleteAction = contextMenu.addAction(tr("Delete"));
+            contextMenu.addSeparator();
+            QAction *copyAction = contextMenu.addAction(tr("Copy"));
+            QAction *pasterAction = contextMenu.addAction(tr("Paste"));
+            QAction *cutAction = contextMenu.addAction(tr("Cut"));
+
+            connect(openAction, &QAction::triggered, [this, item]() {
+                this->Ondoubleclicktree(item, 0);
+            });
+        } else {
+            QAction *newSiteAction = contextMenu.addAction(tr("New Site"));
+            contextMenu.addSeparator();
+            QAction *renameAction = contextMenu.addAction(tr("Rename"));
+            QAction *deleteAction = contextMenu.addAction(tr("Delete"));
+        }
+    } else {
+            QAction *newSiteAction = contextMenu.addAction(tr("New Site"));
+            QAction *newFolderAction = contextMenu.addAction(tr("New Folder"));
+    }
     QAction *action = contextMenu.exec(event->globalPos());
    
 }
 #endif // !QT_NO_CONTEXTMENU && !QT_NO_CLIPBOARD
 
-bool SiteTree::read(QFile  &device)
+bool SiteTree::load()
 {
     QString errorStr;
     int errorLine;
     int errorColumn;
 
-    if (!domDocument.setContent(&device, true, &errorStr, &errorLine,
+    if (!domDocument.setContent(const_cast<QFile *>(&xmlfile), true, &errorStr, &errorLine,
                                 &errorColumn)) {
         QMessageBox::information(window(), tr("DOM Bookmarks"),
                                  tr("Parse error at line %1, column %2:\n%3")
@@ -114,6 +142,11 @@ void SiteTree::parseNode(const QDomNode &element, QTreeWidgetItem *parentItem)
       }
 }
 
+void SiteTree::newSession(){}
+void SiteTree::newFolder(){}
+void SiteTree::editSession(){}
+void SiteTree::deleteSession(){}
+
 void SiteTree::parseSite(const QDomNode &node,
                                   QTreeWidgetItem *parentItem){
     QIcon machineico("./icon/site.ico");
@@ -147,14 +180,17 @@ void SiteTree::parseSite(const QDomNode &node,
                 info.password = elm.text();
         }
     }
-    item->setData(0, DomElementRole, QVariant::fromValue(info));
+    TreeNode treenode;
+    treenode.isFolder = false;
+    treenode.siteInfo = info;
+    item->setData(0, DomElementRole, QVariant::fromValue(treenode));
 }
 
-bool SiteTree::write(QFile  &device) const
+bool SiteTree::save() const
 {
     const int IndentSize = 4;
 
-    QTextStream out(&device);
+    QTextStream out(const_cast<QFile *>(&xmlfile));
     domDocument.save(out, IndentSize);
     return true;
 }
@@ -183,7 +219,8 @@ QTreeWidgetItem * SiteTree::parseFolderElement(const QDomElement &element,
 {
     QIcon folderico("./icon/folder.ico");
     QTreeWidgetItem *item = createItem(element, parentItem);
-
+    TreeNode node;
+    item->setData(0, DomElementRole, QVariant::fromValue(node));
     QString title = element.attribute("name");
     if (title.isEmpty())
         title = QObject::tr("Folder");
@@ -206,7 +243,6 @@ QTreeWidgetItem *SiteTree::createItem(const QDomElement &element,
     } else {
         item = new QTreeWidgetItem(this);
     }
-    item->setData(0, DomElementRole, QVariant::fromValue(element));
     return item;
 }
 

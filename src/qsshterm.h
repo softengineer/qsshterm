@@ -24,8 +24,12 @@ class QSSHTerm : public QTermWidget
     Q_OBJECT
 public:
     QSSHTerm(SiteInfo info, QWidget * parent = 0);
-    void setTabIndex(const int idx) {
-        this->index = idx;
+    void setTabTermKey(const QString termKey) {
+        this->termKey = termKey;
+    }
+
+    QString & getTermKey() {
+        return this->termKey;
     }
     void start();
     void changeFont();
@@ -35,7 +39,7 @@ public slots:
 	void readData(const char *data, int size);
 
 signals:
-    void icon_change(int index, bool isBusy);
+    void icon_change(QString termKey, bool isBusy);
     void reconnect();
 
     /**
@@ -54,7 +58,7 @@ protected:
     }
 private:
 	QSSHSession *session;
-    int index;
+    QString termKey;
     void sendChangeIcon();
 
 

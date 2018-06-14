@@ -31,11 +31,14 @@ class qsshTabTerm: public QMainWindow {
 
   public slots:
       void openSession(SiteInfo);
+      void openSession(int);
       void tabSelected(int);
-      void changeTabIcon(int index, bool isBusy);
+      void changeTabIcon(QString index, bool isBusy);
+      void tabMoved(int from, int to);
 
   private:
       QTabWidget *tabs;
+      QHash<QString, int> termKeyHash;
       QSiteTreeDialog *sessionMgr_dialog;
      	void initMenu();
      	void initToolbar();

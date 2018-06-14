@@ -8,29 +8,7 @@
 #include <QDialog>
 #include <QFile>
 #include <QVariant>
-
-struct SiteInfo {
-    QString sitename;
-    QString hostname;
-    QString username;
-    QString password;
-    QString privateKeyPath;
-
-    int port;
-    bool transferX11;
-
-    SiteInfo() : sitename(QString()), 
-    hostname(QString()), 
-    username(QString()), 
-    password(QString()), 
-    privateKeyPath(QString()), 
-    port(-1), 
-    transferX11(false) {
-        
-    }
-};
-
-Q_DECLARE_METATYPE(SiteInfo);
+#include "qsshterm_common.h"
 
 class SiteTree : public QTreeWidget
 {
@@ -39,13 +17,19 @@ class SiteTree : public QTreeWidget
 public:
     SiteTree(QWidget *parent = 0);
 
-    bool read(QFile  & file);
-    bool write(QFile  & file) const;
+    bool load();
+    bool save() const;
 
 protected:
 #if !defined(QT_NO_CONTEXTMENU) && !defined(QT_NO_CLIPBOARD)
     void contextMenuEvent(QContextMenuEvent *event) override;
 #endif
+
+public slots:
+    void newSession();
+    void newFolder();
+    void editSession();
+    void deleteSession();
 
 private slots:
     void updateDomElement(const QTreeWidgetItem *item, int column);
@@ -64,6 +48,8 @@ private:
     QDomDocument domDocument;
     QIcon folderIcon;
     QIcon bookmarkIcon;
+
+    QFile xmlfile;
 };
 
 class QSiteTreeDialog : public QDialog

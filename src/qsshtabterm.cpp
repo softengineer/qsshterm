@@ -5,27 +5,68 @@ void qsshTabTerm::init() {
 	setWindowTitle(QString::fromUtf8("QSSHTerm"));
 	initMenu();
 	initToolbar();
+  
 
 	QWidget *centralWidget = new QWidget(this);
-    tabs = new QTabWidget(centralWidget);
-    tabs->setStyleSheet("QWidget#custom_tab, QWidget#templates_tab{\
-                           background-color: red; \    
-                        }");
-    tabs->setTabsClosable(true);
-    connect(tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
-    connect(tabs, SIGNAL(currentChanged(int)), this, SLOT(tabSelected(int)));
-    QGridLayout *gridLayout = new QGridLayout(centralWidget);
+  tabs = new QTabWidget(centralWidget);
+  QTabBar * tabBar =  tabs->tabBar();
+  tabBar->setMovable(true);
+  tabs->setStyleSheet("QWidget#custom_tab, QWidget#templates_tab{\
+                         background-color: red; \    
+                      }");
+  tabs->setTabsClosable(true);
+  connect(tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
+  connect(tabs, SIGNAL(currentChanged(int)), this, SLOT(tabSelected(int)));
+  connect(tabBar, SIGNAL(tabMoved(int, int)), this, SLOT(tabMoved(int, int)));
+  QGridLayout *gridLayout = new QGridLayout(centralWidget);
 
-    gridLayout->addWidget(tabs,0,0,1,1);
-    this->setCentralWidget(centralWidget);
-    tabs->installEventFilter(this);
-    showSessionMgrDialog();
+  gridLayout->addWidget(tabs,0,0,1,1);
+  this->setCentralWidget(centralWidget);
+  tabs->installEventFilter(this);
+  this->termKeyHash.clear();
+  showSessionMgrDialog();
  
 }
 
-void qsshTabTerm::changeTabIcon(int index, bool isBusy){
+void qsshTabTerm::tabMoved(int to, int from) {
+  qDebug() << "received move signal, from: " << from << ", to :" << to ;
+   if (from == to)
+      return;
+   QHashIterator<QString, int> itr(termKeyHash);
+   QString termKey;
+
+   while (itr.hasNext()) {
+        itr.next();
+        if (itr.value() == from) 
+            termKey = itr.key();
+   } 
+
+   itr = QHashIterator<QString, int> (termKeyHash);
+   while (itr.hasNext()) {
+        itr.next();
+        if (itr.key().length() ==0)
+          continue;
+
+        if (from > to)  { 
+           // move backward
+          if (itr.value() >= to && itr.value() < from) {
+            termKeyHash[itr.key()] = itr.value() + 1;
+          }
+        }  else {
+          // move forward
+          if (itr.value() > from && itr.value() <= to) {
+            termKeyHash[itr.key()] = itr.value() - 1;
+          }
+        }
+    } 
+
+    this->termKeyHash[termKey] = to;
+}
+
+void qsshTabTerm::changeTabIcon(QString termKey, bool isBusy){
     int idx = tabs->currentIndex() ;
 
+    int index = termKeyHash[termKey];
     QIcon tabIcon = tabs->tabIcon(index);
 
     if (isBusy) {
@@ -52,8 +93,8 @@ void qsshTabTerm::changeTabIcon(int index, bool isBusy){
 void qsshTabTerm::tabSelected(int idx) {
         if (idx == -1)
             return;
-
-        this->changeTabIcon(idx, false);
+        QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
+        this->changeTabIcon(term->getTermKey(), false);
 }
 
 bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
@@ -110,6 +151,14 @@ void qsshTabTerm::closeTab(int index) {
     emit term->disconnect();
     disconnect(term, 0, 0, 0);
     tabs->removeTab(index);
+    this->termKeyHash.remove(term->getTermKey());
+    QHashIterator<QString, int> itr(termKeyHash);
+    while (itr.hasNext()) {
+        itr.next();
+        if (itr.value() > index) {
+          termKeyHash[itr.key()] = itr.value() - 1;
+        }
+    } 
 }
 
 void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
@@ -125,8 +174,12 @@ void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
    contextMenu.addAction(&connectAct);
    contextMenu.addAction(&resetAct);
    contextMenu.addAction(&closeAct);
-
+   connect(&duplicateAct, &QAction::triggered, [this, clickedItem]() {
+        this->openSession(clickedItem);
+   });
    contextMenu.exec(tabs->mapToGlobal(pos));
+   disconnect(&duplicateAct, 0, 0, 0);
+  
 }
 
 void qsshTabTerm::initMenu() {
@@ -141,13 +194,17 @@ void qsshTabTerm::initMenu() {
 
     connect(sessionMgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
     connect(about, &QAction::triggered, this, &qsshTabTerm::showAboutDialog);
+    connect(exit, &QAction::triggered, []() {
+      QCoreApplication::exit() ;
+    });
+    
 }
 
 void qsshTabTerm::initToolbar() {
 	QIcon icon("./icon/structure.ico"); 
 	QToolBar *toolbar = this->addToolBar("main toolbar");
-    QAction * mgr = toolbar->addAction(icon, "sessionMgr");
-    connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
+  QAction * mgr = toolbar->addAction(icon, "sessionMgr");
+  connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
 }
 
 void qsshTabTerm::showSessionMgrDialog() {
@@ -171,7 +228,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
     for (int j = 0; j< tabs->count(); j++) {
         QString title = tabs->tabText(j);
         if (title.startsWith(labelTitle)) {
-            if (title == labelTitle)  {
+            if (title == labelTitle && maxIndex == 0)  {
                 maxIndex = 1;
                 continue;
             } else {
@@ -180,7 +237,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
                     QString number = possibleNumberPair.mid(1, possibleNumberPair.length() - 2);
                     bool ok;
                     int tabNumber = number.toInt(&ok, 10); 
-                    if (ok) {
+                    if (ok && maxIndex <= tabNumber) {
                         maxIndex = tabNumber + 1;
                     }
                 }
@@ -195,12 +252,20 @@ void qsshTabTerm::openSession(SiteInfo info) {
 
     QSSHTerm *term = new QSSHTerm(info);
     int idx = tabs->addTab(term, labelTitle);
-    term->setTabIndex(idx);
+
+    this->termKeyHash[labelTitle] = idx;
+    term->setTabTermKey(labelTitle);
     term->start();
     tabs->setCurrentIndex(idx);
     term->setFocus();
     sessionMgr_dialog->hide();
     QIcon icon("./icon/green.ico"); 
     tabs->setTabIcon(idx, icon);
-    connect(term, SIGNAL(icon_change(int, bool)), this, SLOT(changeTabIcon(int, bool)));
+    connect(term, SIGNAL(icon_change(QString, bool)), this, SLOT(changeTabIcon(QString, bool)));
+  
+}
+
+void qsshTabTerm::openSession(int index) {
+     QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
+     this->openSession(term->siteInfo);
 }
