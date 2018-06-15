@@ -10,17 +10,22 @@ QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
 }
 
 void QSSHTerm::changeFont() {
-  // QFont font = QApplication::font();
-  // #ifdef Q_WS_MAC
-  //     font.setFamily("Monaco");
-  // #elif defined(Q_WS_QWS)
-  //     font.setFamily("fixed");
-  // #else
-  //     font.setFamily("Monospace");
-  // #endif
-  //   font.setPointSize(12);
+  QFont font = QApplication::font();
+  #ifdef Q_WS_MAC
+      font.setFamily("Monaco");
+  #elif defined(Q_WS_QWS)
+      font.setFamily("fixed");
+  #elif defined(Q_WS_WIN)
+      font.setFamily("Courier New");
+      qDebug() << "using window font";
+  #else
+      //font.setFamily("Monospace");
+      font.setFamily("Courier New");
+  #endif
+    font.setPointSize(12);
 
-  // this->setTerminalFont(font);
+  this->setTerminalFont(font);
+  qDebug() << this->getTerminalFont();
 }
 
 void QSSHTerm::readData(const char * d, int size) {
@@ -335,7 +340,7 @@ void QSSHSession::disconnect() {
     ssh_channel_free(channel);
     ssh_disconnect(session);
     ssh_free(session);
-    ssh_finalize();
+    //ssh_finalize();
     qDebug() << "SSH session is closing ...";
 }
 
