@@ -10,22 +10,28 @@ QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
 }
 
 void QSSHTerm::changeFont() {
-  QFont font = QApplication::font();
-  #ifdef Q_WS_MAC
-      font.setFamily("Monaco");
-  #elif defined(Q_WS_QWS)
-      font.setFamily("fixed");
-  #else
-      font.setFamily("Monospace");
-  #endif
-    font.setPointSize(12);
+  // QFont font = QApplication::font();
+  // #ifdef Q_WS_MAC
+  //     font.setFamily("Monaco");
+  // #elif defined(Q_WS_QWS)
+  //     font.setFamily("fixed");
+  // #else
+  //     font.setFamily("Monospace");
+  // #endif
+  //   font.setPointSize(12);
 
-  this->setTerminalFont(font);
+  // this->setTerminalFont(font);
 }
 
 void QSSHTerm::readData(const char * d, int size) {
     QByteArray data(d, size);
     emit sendByteArray(data);
+}
+
+void QSSHTerm::writeData(const char * d, int size) {
+        this->sendChangeIcon();
+        QByteArray data(d, size);
+        this->receivedRemoteData(data);
 }
 
 void QSSHTerm::sendChangeIcon() {
@@ -37,26 +43,22 @@ void QSSHTerm::start() {
      session = new QSSHSession(NULL, this);
 
      //set cursor to blink, default is static cursor
-     this->setBlinkingCursor(true );
+     this->setBlinkingCursor(true);
    // connect(tester, SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(atError()));
 
     // Here we start an empty pty.
-    this->startTerminalTeletype();
     QThread *thread = new QThread();
     session->moveToThread(thread);
-
     connect(this, &QSSHTerm::sendData,this, &QSSHTerm::readData);
+   
     connect(this, &QSSHTerm::sendByteArray,session, &QSSHSession::readByteArray, Qt::QueuedConnection);
 
     // Read anything from remote terminal via socket and show it on widget.
-    connect(session,&QSSHSession::sendData,[this](const char *data, int size){
-        this->sendChangeIcon();
-        write(this->getPtySlaveFd(), data, size);
-    });
+    connect(session,&QSSHSession::dispatchData, this, writeData, Qt::QueuedConnection);
 
     //connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(atError()));
 
-    connect(session, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
+    //connect(session, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
 
     connect(thread, SIGNAL(started()), session, SLOT(process()));
 
@@ -65,13 +67,14 @@ void QSSHTerm::start() {
     connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
     connect(this, &QSSHTerm::resizeSshWindow, session, &QSSHSession::resizeEvent);
 
-    connect(this, SIGNAL(copyAvailable(bool)), this, SLOT(copySelect()));
+    connect(this, SIGNAL(copyAvailable(bool)), this, SLOT(copySelect( )));
 
     connect(this, SIGNAL(connect_to()), session, SLOT(connect_to()));
     connect(this, SIGNAL(reconnect()), session, SLOT(reconnect()));
     connect(this, SIGNAL(disconnect()), session, SLOT(disconnect()));
-    connect(this, SIGNAL(reset()), session, SLOT(reset()));
-
+    connect(this, SIGNAL(reset()), session, SLOT(reset())); 
+   
+    this->startTerminalTeletype();
     thread->start();
 }
 
@@ -105,7 +108,6 @@ void QSSHSession::readByteArray(const QByteArray array) {
   int num = ssh_channel_write(this->channel, array.data(), array.size());
 }
 
-
 void QSSHSession::error(ssh_session session){
   fprintf(stderr,"Authentication failed: %s\n",ssh_get_error(session));
 }
@@ -113,7 +115,6 @@ void QSSHSession::error(ssh_session session){
 void QSSHSession::process() {
   connect_to();
 }
-
 
 int QSSHSession::authenticate_kbdint(ssh_session session, const char *password) {
     int err;
@@ -246,7 +247,7 @@ int QSSHSession::authenticate_console(ssh_session session){
     }
 
     char *passwd = "Password: ";
-    emit sendData(passwd, strlen(passwd));
+    emit dispatchData(passwd, strlen(passwd));
 
     // Try to authenticate with password
     if (method & SSH_AUTH_METHOD_PASSWORD) {
@@ -266,7 +267,7 @@ int QSSHSession::authenticate_console(ssh_session session){
 
   banner = ssh_get_issue_banner(session);
   if (banner) {
-    emit sendData(banner, strlen(banner));
+    emit dispatchData(banner, strlen(banner));
     ssh_string_free_char(banner);
   }
 
@@ -280,13 +281,13 @@ void QSSHSession::log(QString msg) {
      fout.close();
 }
 
-int QSSHSession::select_loop(int j){
+int QSSHSession::select_loop(){
     int nbytes = 0;
     do {
       nbytes = ssh_channel_read_nonblocking(channel, buffer, sizeof(buffer), 0);
       if (nbytes < 0) return SSH_ERROR;
       if (nbytes > 0) {
-          emit sendData(buffer, nbytes);
+          emit dispatchData(buffer, nbytes);
           QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
       }
       
@@ -313,12 +314,15 @@ void QSSHSession::shell(ssh_session session){
     ssh_channel_change_pty_size(channel,width, height);
 
     socket_t socket = ssh_get_fd(session);
+    qDebug() << LIBSSH_DAVIDFAN;
+   
     read_notifier = new QSocketNotifier(socket,
                                          QSocketNotifier::Read,
                                          this);
     read_notifier->setEnabled(true);
     connect(read_notifier, SIGNAL(activated(int)),
-            this, SLOT(select_loop(int)));
+            this, SLOT(select_loop()));
+     
 }
 
 void QSSHSession::reconnect() {
@@ -341,6 +345,7 @@ void QSSHSession::reset() {
 
 
 void QSSHSession::connect_to() {
+	qDebug() << "ssh is initializing";
     ssh_threads_set_callbacks(ssh_threads_get_noop());
     ssh_init();
     session = ssh_new();

@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     int height = rect.height();
     window->setWindowIcon(icon);
     window->resize(height -100, width -200);
-    window->move(rect.center() - window->rect().center());
+    //window->move(rect.center() - window->rect().center());
     window->show();
     return a.exec();
 }

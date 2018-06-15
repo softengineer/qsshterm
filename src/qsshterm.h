@@ -37,10 +37,12 @@ public:
 
 public slots:
 	void readData(const char *data, int size);
+    void writeData(const char *data, int size);
 
 signals:
     void icon_change(QString termKey, bool isBusy);
     void reconnect();
+    void sendData(const char *, int);
 
     /**
       open ssh session, connect to host
@@ -118,10 +120,10 @@ public slots:
 signals:
     void finished();
     void error(QString err);
-    void sendData(const char *data, int size);
+    void dispatchData(const char *data, int size);
 
 private slots:
-    int select_loop(int );
+    int select_loop();
 
 
 private :
@@ -129,9 +131,8 @@ private :
 	ssh_channel channel;
     char buffer[1024];
 	QSSHTerm *qterm;
-	QTimer * timer;
-    QSocketNotifier * read_notifier;
 
+    QSocketNotifier * read_notifier;
 	void shell(ssh_session session);
 	void error(ssh_session session);
 	int authenticate_kbdint(ssh_session session, const char *password);
