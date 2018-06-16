@@ -9,6 +9,7 @@ The project is aimed to provide qt based GUI to offer easy way to access SSH ser
 
 current version only works on Linux, Windows (I haven't tested it on Mac)
 Installation and compile:
+
 In Linux :
 1. Install qt5, openssh 
 2. compile and install qtermwidget and libssh in linux
