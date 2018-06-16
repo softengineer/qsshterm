@@ -58,13 +58,6 @@ void QSSHTerm::start() {
    
     connect(this, &QSSHTerm::sendByteArray,session, &QSSHSession::readByteArray, Qt::QueuedConnection);
 
-    // Read anything from remote terminal via socket and show it on widget.
-    connect(session,&QSSHSession::dispatchData, this, writeData, Qt::QueuedConnection);
-
-    //connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(atError()));
-
-    //connect(session, SIGNAL(error(QString)), this, SLOT(errorString(QString)));
-
     connect(thread, SIGNAL(started()), session, SLOT(process()));
 
     connect(session, SIGNAL(finished()), thread, SLOT(quit()));
@@ -80,6 +73,7 @@ void QSSHTerm::start() {
     connect(this, SIGNAL(reset()), session, SLOT(reset())); 
    
     this->startTerminalTeletype();
+    //session->process();
     thread->start();
 }
 
@@ -118,6 +112,8 @@ void QSSHSession::error(ssh_session session){
 }
 
 void QSSHSession::process() {
+  // Read anything from remote terminal via socket and show it on widget.
+  connect(this,&QSSHSession::dispatchData, qterm, &QSSHTerm::writeData, Qt::BlockingQueuedConnection);
   connect_to();
 }
 
@@ -351,7 +347,7 @@ void QSSHSession::reset() {
 
 void QSSHSession::connect_to() {
 	qDebug() << "ssh is initializing";
-    ssh_threads_set_callbacks(ssh_threads_get_noop());
+    ssh_threads_set_callbacks(ssh_threads_get_pthread());
     ssh_init();
     session = ssh_new();
     int verbosity = 1;
