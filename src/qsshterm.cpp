@@ -73,7 +73,6 @@ void QSSHTerm::start() {
     connect(this, SIGNAL(reset()), session, SLOT(reset())); 
    
     this->startTerminalTeletype();
-    //session->process();
     thread->start();
 }
 
