@@ -1,6 +1,11 @@
 # qsshterm
 Qt based cross platform SSH tab terminal
 
+. support VT100 like terminal
+. support multiple tab for each session
+. support SFTP for ssh session
+. tree session managemen
+
 The ssh tab termnial aims at working in Windows, Linux and Mac. This project is not standalone, it is based on other two opensource projects
 1. qtermwidget - vt100 emulator
 2. libssh - the ssh library to support ssh protocol.
