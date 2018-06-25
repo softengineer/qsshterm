@@ -71,9 +71,14 @@ void QSSHTerm::start() {
     connect(this, SIGNAL(reconnect()), session, SLOT(reconnect()));
     connect(this, SIGNAL(disconnect()), session, SLOT(disconnect()));
     connect(this, SIGNAL(reset()), session, SLOT(reset())); 
+   // connect(this, SIGNAL(rightMouseButtonPressed()), this, SLOT(mouseEvent()));
    
     this->startTerminalTeletype();
     thread->start();
+}
+
+void QSSHTerm::mouseEvent() {
+ 
 }
 
 void QSSHTerm::copySelect() 

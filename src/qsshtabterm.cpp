@@ -159,6 +159,10 @@ void qsshTabTerm::closeTab(int index) {
           termKeyHash[itr.key()] = itr.value() - 1;
         }
     } 
+
+    if (tabs->tabBar()->count() ==0 ) {
+      sftp_mgr->setDisabled(true);
+    }
 }
 
 void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
@@ -202,14 +206,21 @@ void qsshTabTerm::initMenu() {
 
 void qsshTabTerm::initToolbar() {
 	QIcon icon("./icon/structure.ico"); 
+  QIcon sftp_icon("./icon/sftp.ico"); 
 	QToolBar *toolbar = this->addToolBar("main toolbar");
   QAction * mgr = toolbar->addAction(icon, "sessionMgr");
+  sftp_mgr = toolbar->addAction(sftp_icon, "sftpMgr");
+  QShortcut * sessionshortcut = new QShortcut(QKeySequence("Alt+c"), this);
+  
+  //sftp_mgr->setDisabled(true);
   connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
+  connect(sftp_mgr, &QAction::triggered, this, &qsshTabTerm::showSftpMgrDialog);
+  connect(sessionshortcut, &QShortcut::activated, this, &qsshTabTerm::showSessionMgrDialog);
 }
 
 void qsshTabTerm::showSessionMgrDialog() {
     if (!sessionMgr_dialog) {
-    	sessionMgr_dialog=new QSiteTreeDialog(this);
+    	  sessionMgr_dialog=new QSiteTreeDialog(this);
         connect(sessionMgr_dialog, SIGNAL(notifyNewSession(SiteInfo)), this, SLOT(openSession(SiteInfo)));
         sessionMgr_dialog->setModal(true);
     } 
@@ -217,8 +228,21 @@ void qsshTabTerm::showSessionMgrDialog() {
     sessionMgr_dialog->show();
 }
 
+void qsshTabTerm::showSftpMgrDialog() {
+    int index = tabs->currentIndex();
+    QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
+   if (!sftp_dialog) {
+    qDebug() <<" init sftp dialog";
+        sftp_dialog=new QSSHTerm_Sftp_Dialog(this);
+        sftp_dialog->setModal(true);
+    } 
+    
+    sftp_dialog->setSiteInfo(term->siteInfo);
+    sftp_dialog->show();
+}
+
 void qsshTabTerm::showAboutDialog() {
-    QMessageBox::information(NULL, "About", "QSSHTerm V0.1 \nAuthor: david.fan \nLicense: LGPL V3.0 ", QMessageBox::Ok, QMessageBox::Ok);
+    QMessageBox::information(NULL, "About", "QSSHTerm V0.1a \nAuthor: David.Fan \nLicense: LGPL", QMessageBox::Ok, QMessageBox::Ok);
 }
 
 void qsshTabTerm::openSession(SiteInfo info) {
@@ -261,6 +285,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
     sessionMgr_dialog->hide();
     QIcon icon("./icon/green.ico"); 
     tabs->setTabIcon(idx, icon);
+    sftp_mgr->setEnabled(true);
     connect(term, SIGNAL(icon_change(QString, bool)), this, SLOT(changeTabIcon(QString, bool)));
   
 }

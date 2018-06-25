@@ -4,7 +4,8 @@
 #include <libssh/callbacks.h>
 #include <qtermwidget5/qtermwidget.h>
 #include <QApplication>
-#include <QCoreApplication>
+#include <QGuiApplication> 
+#include <QtWidgets>
 #include <QDebug>
 #include <QTimer>
 #include <QBuffer>
@@ -53,6 +54,8 @@ signals:
 	void sendByteArray(const QByteArray array);
     void resizeSshWindow(const int width, const int height);
 
+    void rightMouseButtonPressed();
+
 
 protected:
     void resizeEvent(QResizeEvent * event) {
@@ -66,6 +69,7 @@ private:
 
 private slots:
     void copySelect();
+    void mouseEvent();
 };
 
 class QSSHSession :public QObject {

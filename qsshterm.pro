@@ -27,19 +27,22 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 CONFIG += c++11
+CONFIG += console
 
 SOURCES += \
         src/startup.cpp \
     src/qsshtabterm.cpp \
     src/qsshterm.cpp \
-    src/qsiteconfig.cpp
+    src/qsiteconfig.cpp \
+    src/qsshterm_sftp.cpp
     
 HEADERS += \
     src/qsshtabterm.h \
     src/qsshterm.h \
     src/qsshtabterm.h \
     src/qsiteconfig.h \
-    src/qssh_utils.h
+    src/qssh_utils.h \
+    src/qsshterm_sftp.h
 
 LIBS += -lqtermwidget5
 LIBS += -lssh
@@ -53,3 +56,4 @@ OBJECTS_DIR = $$TEMPDIR/.obj
 MOC_DIR = $$TEMPDIR/.moc
 RCC_DIR = $$TEMPDIR/.qrc
 UI_DIR = $$TEMPDIR/.ui
+
