@@ -27,7 +27,6 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 CONFIG += c++11
-CONFIG += console
 
 SOURCES += \
         src/startup.cpp \
@@ -56,4 +55,6 @@ OBJECTS_DIR = $$TEMPDIR/.obj
 MOC_DIR = $$TEMPDIR/.moc
 RCC_DIR = $$TEMPDIR/.qrc
 UI_DIR = $$TEMPDIR/.ui
+
+win32:RC_ICONS += icon/qsshterm.ico
 
