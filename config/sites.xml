@@ -7,7 +7,7 @@
 			<privatekey file = "C:/Work/Aws/ec2.pem"/>
 		</site>
 		<site name = "demo server">
-			<host address = "dev.cosmoline.cloud" port = "22"/>
+			<host address = "demo.cosmoline.cloud" port = "22"/>
 			<username>ubuntu</username>
 			<privatekey file = "C:/Work/Aws/ec2.pem"/>
 		</site>
@@ -17,7 +17,7 @@
 			<privatekey file = "C:/Work/Aws/ec2.pem"/>
 		</site>
 		<site name = "davidfan VM machine">
-			<host address = "192.168.146.142" port = "22"/>
+			<host address = "davidfan-ubuntu" port = "22"/>
 			<username>davidfan</username>
 			<password>minhaof</password>
 		</site>
