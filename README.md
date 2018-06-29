@@ -7,7 +7,7 @@ Qt based cross platform SSH tab terminal
 - tree session managemen
 
 The ssh tab termnial aims at working in Windows, Linux and Mac. This project is not standalone, it is based on other two opensource projects
-1. [qtermwidget](https://github.com/lxqt/qtermwidget) - vt100 emulator， please use qtermwidget in 3rdparty directory since original one doesn't support Windows platform.
+1. [qtermwidget](https://github.com/lxqt/qtermwidget) - vt100 emulator Notice: please use qtermwidget in 3rdparty directory since original one doesn't support Windows platform.
 2. [libssh](https://www.libssh.org/) - the ssh library to support ssh protocol.
 
 The project is aimed to provide qt based GUI to offer easy way to access SSH server like putty or securecrt.
