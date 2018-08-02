@@ -15,6 +15,7 @@
 #include <QTimer>
 #include <QSocketNotifier>
 #include "qsiteconfig.h"
+#include "qsshterm_common.h"
 
 class QSSHSession;
 class qsshTabTerm;
@@ -39,9 +40,10 @@ public:
 public slots:
 	void readData(const char *data, int size);
     void writeData(const char *data, int size);
+    void sessionError(int j);
 
 signals:
-    void icon_change(QString termKey, bool isBusy);
+    void icon_change(QString termKey, SSHTermState state);
     void reconnect();
     void sendData(const char *, int);
 
@@ -125,9 +127,11 @@ signals:
     void finished();
     void error(QString err);
     void dispatchData(const char *data, int size);
+    void sessionError(int);
 
 private slots:
     int select_loop();
+    void sshStateCheck();
 
 
 private :
@@ -135,8 +139,10 @@ private :
 	ssh_channel channel;
     char buffer[1024];
 	QSSHTerm *qterm;
+    QTimer    *timer;
 
     QSocketNotifier * read_notifier;
+    QSocketNotifier * error_notifier;
 	void shell(ssh_session session);
 	void error(ssh_session session);
 	int authenticate_kbdint(ssh_session session, const char *password);

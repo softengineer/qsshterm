@@ -63,13 +63,13 @@ void qsshTabTerm::tabMoved(int to, int from) {
     this->termKeyHash[termKey] = to;
 }
 
-void qsshTabTerm::changeTabIcon(QString termKey, bool isBusy){
+void qsshTabTerm::changeTabIcon(QString termKey, SSHTermState state){
     int idx = tabs->currentIndex() ;
 
     int index = termKeyHash[termKey];
     QIcon tabIcon = tabs->tabIcon(index);
 
-    if (isBusy) {
+    if (state == BUSY) {
         if (idx == index)
           return;
 
@@ -80,11 +80,18 @@ void qsshTabTerm::changeTabIcon(QString termKey, bool isBusy){
          tabs->setTabIcon(index, icon);
        }
 
-    } else {
+    } else if (state == IDLE){
       if (tabIcon.name() == "./icon/green.ico")
           return;
        else  {
          QIcon icon("./icon/green.ico"); 
+         tabs->setTabIcon(index, icon);
+       }
+    } else if (state == DISCONNECT) {
+      if (tabIcon.name() == "./icon/grey.ico")
+          return;
+       else  {
+         QIcon icon("./icon/grey.ico"); 
          tabs->setTabIcon(index, icon);
        }
     }
@@ -94,7 +101,7 @@ void qsshTabTerm::tabSelected(int idx) {
         if (idx == -1)
             return;
         QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
-        this->changeTabIcon(term->getTermKey(), false);
+        this->changeTabIcon(term->getTermKey(), IDLE);
 }
 
 bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
@@ -286,7 +293,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
     QIcon icon("./icon/green.ico"); 
     tabs->setTabIcon(idx, icon);
     sftp_mgr->setEnabled(true);
-    connect(term, SIGNAL(icon_change(QString, bool)), this, SLOT(changeTabIcon(QString, bool)));
+    connect(term, SIGNAL(icon_change(QString, SSHTermState)), this, SLOT(changeTabIcon(QString, SSHTermState)));
   
 }
 

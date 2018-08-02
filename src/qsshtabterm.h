@@ -1,6 +1,7 @@
 #include "qsshterm.h"
 #include "qsiteconfig.h"
 #include "qsshterm_sftp.h"
+#include "qsshterm_common.h"
 #include <QtWidgets>
 #include <QApplication>
 #include <QDebug>
@@ -34,7 +35,7 @@ class qsshTabTerm: public QMainWindow {
       void openSession(SiteInfo);
       void openSession(int);
       void tabSelected(int);
-      void changeTabIcon(QString index, bool isBusy);
+      void changeTabIcon(QString index, SSHTermState state);
       void tabMoved(int from, int to);
 
   private:

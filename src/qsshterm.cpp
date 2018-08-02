@@ -40,7 +40,12 @@ void QSSHTerm::writeData(const char * d, int size) {
 }
 
 void QSSHTerm::sendChangeIcon() {
-  emit icon_change(this->termKey, true);
+  emit icon_change(this->termKey, BUSY);
+}
+
+void QSSHTerm::sessionError(int j){
+       qDebug() << "session trigger exception";
+       emit icon_change(this->termKey, DISCONNECT);
 }
 
 
@@ -71,6 +76,7 @@ void QSSHTerm::start() {
     connect(this, SIGNAL(reconnect()), session, SLOT(reconnect()));
     connect(this, SIGNAL(disconnect()), session, SLOT(disconnect()));
     connect(this, SIGNAL(reset()), session, SLOT(reset())); 
+    connect(session, SIGNAL(sessionError(int)), this, SLOT(sessionError(int)), Qt::QueuedConnection);
    // connect(this, SIGNAL(rightMouseButtonPressed()), this, SLOT(mouseEvent()));
    
     this->startTerminalTeletype();
@@ -92,13 +98,10 @@ QSSHSession::QSSHSession( QObject *parent , QSSHTerm * term)
 }
 
 void QSSHSession::resizeEvent(const int width, const int height) {
-    qDebug()<<"resize event received :" << width << "," << height;
     qterm->changeFont();
     int wwidth = qterm->screenColumnsCount();
     int wheight = qterm->screenLinesCount();
-    qDebug() << "current window wwidth / wheight value" << wwidth << "/" << wheight;
     if (width == 1 || height == 1) {
-      qDebug() << "Received invalid width / height value" << width << "/" << height;
       return;
     }
     
@@ -299,6 +302,17 @@ int QSSHSession::select_loop(){
     } while(nbytes > 0);
 }
 
+void QSSHSession::sshStateCheck() {
+  int status = ssh_get_status(session);
+  if (status != 0 ) {
+     qDebug() << "There is network issue" ;
+    emit sessionError(1);
+    timer->stop();
+    char * msg = "\nSSH Session is broken, press enter to restart ...";
+    emit dispatchData(msg, strlen(msg));
+  }
+}
+
 void QSSHSession::shell(ssh_session session){
     this->channel = ssh_channel_new(session);
     ssh_channel_accept_x11(channel, 10);
@@ -319,7 +333,7 @@ void QSSHSession::shell(ssh_session session){
     ssh_channel_change_pty_size(channel,width, height);
 
     socket_t socket = ssh_get_fd(session);
-    qDebug() << LIBSSH_DAVIDFAN;
+    //qDebug() << LIBSSH_DAVIDFAN;
    
     read_notifier = new QSocketNotifier(socket,
                                          QSocketNotifier::Read,
@@ -327,8 +341,22 @@ void QSSHSession::shell(ssh_session session){
     read_notifier->setEnabled(true);
     connect(read_notifier, SIGNAL(activated(int)),
             this, SLOT(select_loop()));
-     
+
+    // error_notifier = new QSocketNotifier(socket,
+    //                                      QSocketNotifier::Exception,
+    //                                      this);
+   
+    // connect(error_notifier, SIGNAL(activated(int)),
+    //         this, SLOT(networkError(int )));
+    // error_notifier->setEnabled(true);
+
+    timer = new QTimer(this);
+    timer->setSingleShot(false);
+    timer->setInterval(1000);
+    connect(timer, SIGNAL(timeout()), this, SLOT(sshStateCheck()));
+    timer->start();
 }
+
 
 void QSSHSession::reconnect() {
    disconnect();
@@ -337,6 +365,7 @@ void QSSHSession::reconnect() {
 
 void QSSHSession::disconnect() {
     read_notifier->setEnabled(false);
+    timer->stop();
     ssh_channel_free(channel);
     ssh_disconnect(session);
     ssh_free(session);
@@ -359,6 +388,7 @@ void QSSHSession::connect_to() {
       ssh_options_set(session, SSH_OPTIONS_USER, qterm->siteInfo.username.toLatin1().data());
     ssh_options_set(session, SSH_OPTIONS_HOST, qterm->siteInfo.hostname.toLatin1().data());
     ssh_options_set(session, SSH_OPTIONS_PORT, &qterm->siteInfo.port);
+      ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
     int rc = ssh_connect(session);
 
     if (rc != SSH_OK) {

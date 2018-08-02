@@ -24,6 +24,17 @@ struct SiteInfo {
 
 Q_DECLARE_METATYPE(SiteInfo);
 
+
+enum SSHTermState
+{
+    DISCONNECT,
+    IDLE ,
+    BUSY
+};
+
+Q_ENUMS(SSHTermState);
+
+
 struct TreeNode {
     bool isFolder;
     SiteInfo  siteInfo;
