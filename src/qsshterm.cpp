@@ -307,6 +307,10 @@ void QSSHSession::sshStateCheck() {
   
   bool iseof = ssh_channel_is_eof(channel);
   int status = ssh_get_status(session);
+  if (status == SSH_WRITE_PENDING) {
+      // this is not an error, just ignore it
+      status = 0;
+  }
   if (status != 0 || iseof) {
      qDebug() << "There is network issue" ;
     emit sessionError(1);
