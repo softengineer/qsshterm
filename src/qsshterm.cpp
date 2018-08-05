@@ -3,7 +3,7 @@
 #include <QFont>
 
 QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
-    : QTermWidget(0,parent), termKey(QString()), siteInfo(info)
+    : QTermWidget(0,parent), termKey(QString()), siteInfo(info), sessionState(IDLE)
 {  
   this->setColorScheme("Ubuntu");
   changeFont();
@@ -46,6 +46,7 @@ void QSSHTerm::sendChangeIcon() {
 void QSSHTerm::sessionError(int j){
        qDebug() << "session trigger exception";
        emit icon_change(this->termKey, DISCONNECT);
+       this->sessionState = DISCONNECT;
 }
 
 
@@ -254,7 +255,7 @@ int QSSHSession::authenticate_console(ssh_session session){
       }
     }
 
-    char *passwd = "Password: ";
+    char *passwd = "Password: \r\n";
     emit dispatchData(passwd, strlen(passwd));
 
     // Try to authenticate with password
@@ -303,12 +304,14 @@ int QSSHSession::select_loop(){
 }
 
 void QSSHSession::sshStateCheck() {
+  
+  bool iseof = ssh_channel_is_eof(channel);
   int status = ssh_get_status(session);
-  if (status != 0 ) {
+  if (status != 0 || iseof) {
      qDebug() << "There is network issue" ;
     emit sessionError(1);
     timer->stop();
-    char * msg = "\nSSH Session is broken, press enter to restart ...";
+    char * msg = "\r\nSSH Session is broken, press enter to restart ...";
     emit dispatchData(msg, strlen(msg));
   }
 }
@@ -364,11 +367,16 @@ void QSSHSession::reconnect() {
 }
 
 void QSSHSession::disconnect() {
-    read_notifier->setEnabled(false);
-    timer->stop();
-    ssh_channel_free(channel);
-    ssh_disconnect(session);
-    ssh_free(session);
+    if (read_notifier)
+      read_notifier->setEnabled(false);
+    if (timer)
+      timer->stop();
+    if (channel)
+      ssh_channel_free(channel);
+    if (session) {
+      ssh_disconnect(session);
+      ssh_free(session);
+    }
     //ssh_finalize();
     qDebug() << "SSH session is closing ...";
 }
@@ -382,17 +390,23 @@ void QSSHSession::connect_to() {
 	qDebug() << "ssh is initializing";
     ssh_threads_set_callbacks(ssh_threads_get_pthread());
     ssh_init();
+    char * msg = "Connecting to host ...\r\n";
+    emit dispatchData(msg, strlen(msg));
     session = ssh_new();
     int verbosity = 1;
     if (!qterm->siteInfo.username.isNull())
       ssh_options_set(session, SSH_OPTIONS_USER, qterm->siteInfo.username.toLatin1().data());
+
     ssh_options_set(session, SSH_OPTIONS_HOST, qterm->siteInfo.hostname.toLatin1().data());
     ssh_options_set(session, SSH_OPTIONS_PORT, &qterm->siteInfo.port);
-      ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
+    ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
     int rc = ssh_connect(session);
 
     if (rc != SSH_OK) {
         qDebug() << "Connection to host failed!";
+        char * msg = "\r\nFail to connect to server, press enter to restart ...";
+        emit dispatchData(msg, strlen(msg));
+        emit sessionError(1);
         return;
     }
 

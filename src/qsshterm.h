@@ -35,6 +35,10 @@ public:
     }
     void start();
     void changeFont();
+
+    SSHTermState state() {
+        return sessionState;
+    }
     SiteInfo siteInfo;
 
 public slots:
@@ -66,6 +70,7 @@ protected:
 private:
 	QSSHSession *session;
     QString termKey;
+    SSHTermState sessionState;
     void sendChangeIcon();
 
 
