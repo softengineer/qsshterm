@@ -39,6 +39,10 @@ public:
     SSHTermState state() {
         return sessionState;
     }
+
+    void setState(SSHTermState state) {
+        this->sessionState = state;
+    }
     SiteInfo siteInfo;
 
 public slots:

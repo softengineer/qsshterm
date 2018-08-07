@@ -101,8 +101,10 @@ void qsshTabTerm::tabSelected(int idx) {
         if (idx == -1)
             return;
         QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
-        if (term->state() == BUSY)
+        if (term->state() == BUSY) {
           this->changeTabIcon(term->getTermKey(), IDLE);
+          term->setState(IDLE);
+        }
 }
 
 bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){

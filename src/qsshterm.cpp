@@ -40,6 +40,7 @@ void QSSHTerm::writeData(const char * d, int size) {
 }
 
 void QSSHTerm::sendChangeIcon() {
+  this->sessionState = BUSY;
   emit icon_change(this->termKey, BUSY);
 }
 
