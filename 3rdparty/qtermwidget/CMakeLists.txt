@@ -9,7 +9,7 @@ include(CheckFunctionExists)
 include(CheckIncludeFile)
 
 set(REQUIRED_QT_VERSION "5.7.1")
-set(LXQTBT_MINIMUM_VERSION "0.5.0")
+#set(LXQTBT_MINIMUM_VERSION "0.5.0")
 
 option(UPDATE_TRANSLATIONS "Update source translation translations/*.ts files" OFF)
 option(BUILD_EXAMPLE "Build example application. Default OFF." OFF)
