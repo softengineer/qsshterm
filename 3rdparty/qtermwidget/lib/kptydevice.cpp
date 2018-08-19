@@ -39,7 +39,11 @@
 #include <signal.h>
 #include <termios.h>
 #include <fcntl.h>
+
+#ifndef __WIN32__
 #include <sys/ioctl.h>
+#endif
+
 #ifdef HAVE_SYS_FILIO_H
 # include <sys/filio.h>
 #endif

@@ -54,9 +54,13 @@
 #endif
 
 #include <sys/types.h>
+
+#ifndef __WIN32__
 #include <sys/ioctl.h>
-#include <sys/time.h>
 #include <sys/resource.h>
+#endif
+
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/param.h>
 
