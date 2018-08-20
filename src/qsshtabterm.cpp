@@ -197,21 +197,33 @@ void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
 }
 
 void qsshTabTerm::initMenu() {
-	QMenu *session = this->menuBar()->addMenu(QObject::tr("Session"));
+	  QMenu *session = this->menuBar()->addMenu(QObject::tr("Session"));
     QMenu *view = this->menuBar()->addMenu(QObject::tr("View"));
     QAction * mtoolbar = view->addAction(QObject::tr("&Toolbar"));
     QAction * menubar = view->addAction(QObject::tr("&Menubar"));
+    QAction * mfind = view->addAction(QObject::tr("&Find"));
+    QShortcut * findshortcut = new QShortcut(QKeySequence("Ctrl+f"), this);
+    
     QMenu *help = this->menuBar()->addMenu(QObject::tr("Help"));
     QAction * about = help->addAction(QObject::tr("&About"));
     QAction * sessionMgr = session->addAction(QObject::tr("Session &Manager"));
     QAction *exit = session->addAction(QObject::tr("&Exit"));
 
     connect(sessionMgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
+    connect(mfind, &QAction::triggered, this, &qsshTabTerm::showFindDialog);
     connect(about, &QAction::triggered, this, &qsshTabTerm::showAboutDialog);
     connect(exit, &QAction::triggered, []() {
       QCoreApplication::exit() ;
     });
-    
+    connect(findshortcut, &QShortcut::activated, this, &qsshTabTerm::showFindDialog);
+}
+
+void qsshTabTerm::showFindDialog() {
+   int idx = tabs->currentIndex() ;
+   if (idx == -1)
+      return;
+   QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
+   emit term->toggleShowSearchBar();
 }
 
 void qsshTabTerm::initToolbar() {

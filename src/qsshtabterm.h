@@ -48,6 +48,7 @@ class qsshTabTerm: public QMainWindow {
      	void initToolbar();
      	void showSessionMgrDialog();  
       void showSftpMgrDialog();
+      void showFindDialog();
       void showAboutDialog();
       void on_tab_rightMouse_pressed( int clickedItem, QPoint position );
 
