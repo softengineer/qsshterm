@@ -1,0 +1,7 @@
+build-app/
+build-qtw/
+build/
+deps/
+dist/
+*.dmg
+QSSHTerm-*.zip

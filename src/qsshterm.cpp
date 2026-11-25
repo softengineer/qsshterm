@@ -1,12 +1,16 @@
 #include "qsshterm.h"
 #include "qssh_helpers.h"
+#include "qssh_theme.h"
 #include <QFont>
 #include <QFontDatabase>
 
 QSSHTerm::QSSHTerm(const SiteInfo &info, QWidget *parent)
     : QTermWidget(0, parent), siteInfo(info)
 {
-  this->setColorScheme("Ubuntu");
+  this->setColorScheme(ThemeManager::instance()->effectiveTerminalScheme());
+  connect(ThemeManager::instance(), &ThemeManager::changed, this, [this]() {
+    setColorScheme(ThemeManager::instance()->effectiveTerminalScheme());
+  });
   // bidi shaping lays out every line through QTextLayout: very slow on bulk output
   this->setBidiEnabled(false);
   changeFont();
@@ -63,14 +67,19 @@ void QSSHTerm::sendChangeIcon() {
 
 void QSSHTerm::sessionError(int) {
   reconnectPending = false;
+  connected = false;
+  cipherInfo.clear();
   this->sessionState = DISCONNECT;
   emit icon_change(this->termKey, DISCONNECT);
+  emit statusChanged();
 }
 
 void QSSHTerm::sessionConnected() {
   reconnectPending = false;
+  connected = true;
   this->sessionState = IDLE;
   emit icon_change(this->termKey, IDLE);
+  emit statusChanged();
 }
 
 void QSSHTerm::resizeEvent(QResizeEvent *event) {
@@ -110,6 +119,10 @@ void QSSHTerm::start() {
     connect(session, &QSSHSession::dispatchData, this, &QSSHTerm::writeData);
     connect(session, &QSSHSession::sessionError, this, &QSSHTerm::sessionError);
     connect(session, &QSSHSession::sessionConnected, this, &QSSHTerm::sessionConnected);
+    connect(session, &QSSHSession::sessionInfo, this, [this](const QString &info) {
+        cipherInfo = info;
+        emit statusChanged();
+    });
 
     this->startTerminalTeletype();
     thread->start();
@@ -308,5 +321,7 @@ void QSSHSession::connect_to() {
         return;
     }
 
+    const char *cipher = ssh_get_cipher_out(session);
+    emit sessionInfo(QStringLiteral("ssh2: %1").arg(QString::fromUtf8(cipher ? cipher : "?")));
     emit sessionConnected();
 }

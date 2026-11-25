@@ -1,0 +1,157 @@
+name: Build
+
+# Builds QSSHTerm for Windows (x64, MinGW/UCRT) and macOS (Apple Silicon) and
+# uploads ready-to-run packages as workflow artifacts. Pushing a tag such as
+# v0.2.0 also attaches the packages to a GitHub release.
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed only by the release step on tags
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The bundled qtermwidget's Windows POSIX shims target MinGW, so build
+      # everything with the MSYS2 UCRT64 toolchain.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: zip
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            qt6-base:p
+            qt6-svg:p
+            qt6-tools:p
+            libssh:p
+
+      - name: Build qtermwidget
+        run: |
+          cmake -S 3rdparty/qtermwidget -B build-qtw -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/deps"
+          cmake --build build-qtw
+          cmake --install build-qtw
+
+      - name: Build qsshterm
+        run: |
+          QMAKE=$(command -v qmake6 || command -v qmake-qt6 || command -v qmake)
+          mkdir build-app && cd build-app
+          "$QMAKE" ../qsshterm.pro CONFIG+=release \
+                   "INCLUDEPATH+=$PWD/../deps/include" "LIBS+=-L$PWD/../deps/lib"
+          mingw32-make -j"$(nproc)"
+
+      - name: Package
+        run: |
+          D=dist/QSSHTerm
+          mkdir -p "$D"
+          cp build-app/qsshterm.exe "$D/"
+          find deps -name 'libqtermwidget6*.dll' -exec cp {} "$D/" \;
+          # qtermwidget looks for these next to the executable
+          cp -r color-schemes kb-layouts "$D/"
+          cp LICENSE "$D/"
+
+          DEPLOY=$(command -v windeployqt6 || command -v windeployqt-qt6 || command -v windeployqt)
+          "$DEPLOY" --release --no-translations --no-system-d3d-compiler --no-opengl-sw \
+                    "$D/qsshterm.exe"
+
+          # MinGW runtime, libssh, OpenSSL, zlib ... (repeat to catch indirect deps)
+          for pass in 1 2 3; do
+            find "$D" -name '*.exe' -o -name '*.dll' | while read -r f; do
+              ldd "$f" | awk '/\/ucrt64\// {print $3}'
+            done | sort -u | while read -r dep; do
+              [ -f "$D/$(basename "$dep")" ] || cp "$dep" "$D/"
+            done
+          done
+
+          if ldd "$D/qsshterm.exe" | grep -i 'not found'; then
+            echo "::error::unresolved DLLs"; exit 1
+          fi
+          (cd dist && zip -qr ../QSSHTerm-windows-x64.zip QSSHTerm)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QSSHTerm-windows-x64
+          path: QSSHTerm-windows-x64.zip
+
+  macos:
+    runs-on: macos-14   # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install qt libssh ninja
+
+      - name: Build qtermwidget
+        run: |
+          cmake -S 3rdparty/qtermwidget -B build-qtw -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
+                -DCMAKE_INSTALL_PREFIX="$PWD/deps"
+          cmake --build build-qtw
+          cmake --install build-qtw
+
+      - name: Build qsshterm
+        run: |
+          mkdir build-app && cd build-app
+          # app icon: convert the Windows .ico to .icns
+          ICON_ARG=()
+          if sips -s format png ../icon/qsshterm.ico --out icon.png >/dev/null &&
+             sips -z 512 512 icon.png >/dev/null &&
+             sips -s format icns icon.png --out qsshterm.icns >/dev/null; then
+            ICON_ARG=("ICON=$PWD/qsshterm.icns")
+          fi
+          SSH=$(brew --prefix libssh)
+          "$(brew --prefix qt)/bin/qmake" ../qsshterm.pro CONFIG+=release "${ICON_ARG[@]}" \
+                "INCLUDEPATH+=$PWD/../deps/include $SSH/include" \
+                "LIBS+=-L$PWD/../deps/lib -L$SSH/lib"
+          make -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package
+        run: |
+          APP=build-app/qsshterm.app
+          # qtermwidget looks in Contents/Resources for these
+          cp -R color-schemes kb-layouts "$APP/Contents/Resources/"
+          "$(brew --prefix qt)/bin/macdeployqt" "$APP" -libpath="$PWD/deps/lib"
+
+          # every non-system library must now live inside the bundle
+          if find "$APP" -type f \( -perm -u+x -o -name '*.dylib' \) -exec otool -L {} \; 2>/dev/null |
+             grep -E "/opt/homebrew|$PWD/deps"; then
+            echo "::error::bundle still references libraries outside the app"; exit 1
+          fi
+
+          # unsigned: ad-hoc sign so Apple Silicon will run it
+          codesign --force --deep --sign - "$APP"
+          hdiutil create -volname QSSHTerm -srcfolder "$APP" -ov -format UDZO QSSHTerm-macos-arm64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QSSHTerm-macos-arm64
+          path: QSSHTerm-macos-arm64.dmg
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            QSSHTerm-windows-x64.zip
+            QSSHTerm-macos-arm64.dmg

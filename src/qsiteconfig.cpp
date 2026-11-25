@@ -1,6 +1,7 @@
 #include <QtWidgets>
 
 #include "qsiteconfig.h"
+#include "qssh_icons.h"
 
 enum { DomElementRole = Qt::UserRole + 1, DomNodeRole = Qt::UserRole + 2 };
 
@@ -75,7 +76,7 @@ static void writeSiteElement(QDomDocument &doc, QDomElement &element, const Site
 }
 
 // Modal editor for one site's connection settings
-static bool editSiteInfo(QWidget *parent, const QString &title, SiteInfo &info)
+static bool editSiteDialog(QWidget *parent, const QString &title, SiteInfo &info)
 {
     QDialog dlg(parent);
     dlg.setWindowTitle(title);
@@ -134,81 +135,6 @@ static bool editSiteInfo(QWidget *parent, const QString &title, SiteInfo &info)
     return true;
 }
 
-SiteTree::SiteTree(QWidget *parent)
-    : QTreeWidget(parent)
-{
-    // QStringList labels;
-    // labels << tr("Title") << tr("Location");
-
-    // header()->setSectionResizeMode(QHeaderView::Stretch);
-    // setHeaderLabels(labels);
-
-    // folderIcon.addPixmap(style()->standardPixmap(QStyle::SP_DirClosedIcon),
-    //                      QIcon::Normal, QIcon::Off);
-    // folderIcon.addPixmap(style()->standardPixmap(QStyle::SP_DirOpenIcon),
-    //                      QIcon::Normal, QIcon::On);
-    // bookmarkIcon.addPixmap(style()->standardPixmap(QStyle::SP_FileIcon));
-    setHeaderHidden(true);
-    setEditTriggers(QAbstractItemView::NoEditTriggers);
-    folderIcon.addFile("./icon/folder.icon");
-
-    xmlfile.setFileName(sitesFilePath());
-    connect(this,SIGNAL(itemDoubleClicked(QTreeWidgetItem *, int)),this,SLOT(Ondoubleclicktree(QTreeWidgetItem *, int)));
-    load();
-}
-
-void SiteTree::Ondoubleclicktree(QTreeWidgetItem *item, int column)
-{
-    Q_UNUSED(column);
-    if (!item)
-        return;
-    QVariant data = item->data(0, DomElementRole);
-    TreeNode node = data.value<TreeNode>();
-    if (node.isFolder) {
-        return;
-    }
-    QSiteTreeDialog * dialog = qobject_cast<QSiteTreeDialog*>(window());
-    if (dialog)
-        emit dialog->notifyNewSession(node.siteInfo);
-}
-
-#if !defined(QT_NO_CONTEXTMENU) && !defined(QT_NO_CLIPBOARD)
-void SiteTree::contextMenuEvent(QContextMenuEvent *event)
-{
-
-    QTreeWidgetItem *item = itemAt(event->pos());
-    setCurrentItem(item);
-    if (!item)
-        clearSelection();
-    QMenu contextMenu;
-    if (item) {
-        TreeNode node = item->data(0, DomElementRole).value<TreeNode>();
-
-        if (!node.isFolder) {
-            connect(contextMenu.addAction(tr("Open")), &QAction::triggered, this, [this, item]() {
-                this->Ondoubleclicktree(item, 0);
-            });
-            contextMenu.addSeparator();
-            connect(contextMenu.addAction(tr("New Site")), &QAction::triggered, this, &SiteTree::newSession);
-            connect(contextMenu.addAction(tr("Edit")), &QAction::triggered, this, &SiteTree::editSession);
-            connect(contextMenu.addAction(tr("Delete")), &QAction::triggered, this, &SiteTree::deleteSession);
-        } else {
-            connect(contextMenu.addAction(tr("New Site")), &QAction::triggered, this, &SiteTree::newSession);
-            connect(contextMenu.addAction(tr("New Folder")), &QAction::triggered, this, &SiteTree::newFolder);
-            contextMenu.addSeparator();
-            connect(contextMenu.addAction(tr("Rename")), &QAction::triggered, this, &SiteTree::editSession);
-            connect(contextMenu.addAction(tr("Delete")), &QAction::triggered, this, &SiteTree::deleteSession);
-        }
-    } else {
-        connect(contextMenu.addAction(tr("New Site")), &QAction::triggered, this, &SiteTree::newSession);
-        connect(contextMenu.addAction(tr("New Folder")), &QAction::triggered, this, &SiteTree::newFolder);
-    }
-    contextMenu.exec(event->globalPos());
-}
-#endif // !QT_NO_CONTEXTMENU && !QT_NO_CLIPBOARD
-
-// Sites live in ~/.qsshterm/sites.xml. On first run, seed it from the
-// legacy ./config/sites.xml if present, otherwise from an empty <sites/>.
 QString SiteTree::sitesFilePath()
 {
     const QString dirPath = QDir::homePath() + "/.qsshterm";
@@ -217,10 +143,14 @@ QString SiteTree::sitesFilePath()
         return path;
 
     QDir().mkpath(dirPath);
-    const QString legacy = "./config/sites.xml";
-    if (QFile::exists(legacy) && QFile::copy(legacy, path)) {
-        QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        return path;
+    // seed from the config/ folder shipped next to the program (or the
+    // working directory, where older versions kept it)
+    for (const QString &legacy : {QCoreApplication::applicationDirPath() + "/config/sites.xml",
+                                  QStringLiteral("./config/sites.xml")}) {
+        if (QFile::exists(legacy) && QFile::copy(legacy, path)) {
+            QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+            return path;
+        }
     }
 
     QFile f(path);
@@ -232,56 +162,63 @@ QString SiteTree::sitesFilePath()
     return path;
 }
 
-bool SiteTree::load()
+// ---------------------------------------------------------------------------
+// shared document
+
+static QDomDocument &sharedDoc()
 {
-    if (!xmlfile.open(QIODevice::ReadOnly)) {
-        QMessageBox::information(window(), tr("DOM Bookmarks"),
-                                 tr("Cannot read %1:\n%2")
-                                 .arg(xmlfile.fileName(), xmlfile.errorString()));
-        return false;
+    static QDomDocument doc;
+    return doc;
+}
+
+static QList<SiteTree *> &allTrees()
+{
+    static QList<SiteTree *> trees;
+    return trees;
+}
+
+// Loads sites.xml once for all trees; on error starts from an empty list
+static void ensureLoaded(QWidget *parent)
+{
+    static bool loaded = false;
+    if (loaded)
+        return;
+    loaded = true;
+
+    QDomDocument &doc = sharedDoc();
+    QFile file(SiteTree::sitesFilePath());
+    if (file.open(QIODevice::ReadOnly)) {
+        const QDomDocument::ParseResult result = doc.setContent(&file);
+        if (!result)
+            QMessageBox::warning(parent, QObject::tr("Session Manager"),
+                                 QObject::tr("Cannot parse %1 at line %2, column %3:\n%4")
+                                     .arg(file.fileName()).arg(result.errorLine)
+                                     .arg(result.errorColumn).arg(result.errorMessage));
     }
-    const QDomDocument::ParseResult result =
-        domDocument.setContent(&xmlfile, QDomDocument::ParseOption::UseNamespaceProcessing);
-    xmlfile.close();
-    if (!result) {
-        QMessageBox::information(window(), tr("DOM Bookmarks"),
-                                 tr("Parse error at line %1, column %2:\n%3")
-                                 .arg(result.errorLine)
-                                 .arg(result.errorColumn)
-                                 .arg(result.errorMessage));
-        return false;
+    if (doc.documentElement().tagName() != "sites") {
+        doc.clear();
+        doc.appendChild(doc.createProcessingInstruction("xml", "version=\"1.0\" encoding=\"UTF-8\""));
+        doc.appendChild(doc.createElement("sites"));
     }
+}
 
-    QDomElement root = domDocument.documentElement();
-
-    if (root.tagName() != "sites") {
-        QMessageBox::information(window(), tr("DOM Bookmarks"),
-                                 tr("The file is not an session config file."));
+static bool saveShared()
+{
+    QSaveFile out(SiteTree::sitesFilePath());
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
         return false;
-    } 
-
-    clear();
-
-    disconnect(this, &QTreeWidget::itemChanged, this, &SiteTree::updateDomElement);
-
-    parseNode(root);
-    connect(this, &QTreeWidget::itemChanged, this, &SiteTree::updateDomElement);
-
+    QTextStream stream(&out);
+    sharedDoc().save(stream, 4);
+    stream.flush();
+    if (!out.commit())
+        return false;
+    QFile::setPermissions(out.fileName(), QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     return true;
 }
 
-void SiteTree::parseNode(const QDomNode &element, QTreeWidgetItem *parentItem)
-{
-      QDomNodeList list = element.childNodes();
-      for (int j = 0; j < list.size(); j++) {
-            QDomNode node = list.at(j);
-            if (node.nodeName() == "folder") {
-                QTreeWidgetItem * pnode = parseFolderElement(node.toElement(), parentItem);
-                parseNode(node, pnode);
-            } else if (node.nodeName() == "site")
-                parseSite(node, parentItem);
-      }
-}
+// cut/copy buffer, shared by all trees
+static QDomElement clipElement;
+static bool clipIsCut = false;
 
 static bool isFolderItem(const QTreeWidgetItem *item)
 {
@@ -293,55 +230,250 @@ static QDomElement elementOf(const QTreeWidgetItem *item)
     return item ? item->data(0, DomNodeRole).value<QDomElement>() : QDomElement();
 }
 
+static bool isAncestorOrSelf(const QDomNode &ancestor, QDomNode node)
+{
+    for (; !node.isNull(); node = node.parentNode())
+        if (node == ancestor)
+            return true;
+    return false;
+}
+
+// path of folder names, used to keep folders collapsed across rebuilds
+static QString folderPath(const QTreeWidgetItem *item)
+{
+    QStringList parts;
+    for (; item; item = item->parent())
+        parts.prepend(item->text(0));
+    return parts.join(QChar('/'));
+}
+
+// ---------------------------------------------------------------------------
+// SiteTree
+
+bool SiteTree::editSiteInfo(QWidget *parent, const QString &title, SiteInfo &info)
+{
+    return editSiteDialog(parent, title, info);
+}
+
+SiteTree::SiteTree(QWidget *parent)
+    : QTreeWidget(parent)
+{
+    setHeaderHidden(true);
+    setEditTriggers(QAbstractItemView::NoEditTriggers);
+    setSelectionMode(QAbstractItemView::SingleSelection);
+    setUniformRowHeights(true);
+    setAnimated(true);
+    setIconSize(QSize(16, 16));
+
+    auto make = [this](QIcon icon, const QString &text, const QKeySequence &key, auto slot) {
+        QAction *a = new QAction(icon, text, this);
+        if (!key.isEmpty()) {
+            a->setShortcut(key);
+            a->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+            a->setToolTip(QStringLiteral("%1 (%2)").arg(text, key.toString(QKeySequence::NativeText)));
+        }
+        connect(a, &QAction::triggered, this, slot);
+        addAction(a);   // makes the shortcut work while the tree has focus
+        return a;
+    };
+    actConnect = make(qssh::themeIcon({"go-jump", "media-playback-start"}, QStyle::SP_MediaPlay),
+                      tr("Connect"), QKeySequence(), &SiteTree::connectSelected);
+    actConnect->setToolTip(tr("Connect to the selected session (Enter)"));
+    actNewSession = make(qssh::themeIcon({"document-new"}, QStyle::SP_FileIcon),
+                         tr("New Session..."), QKeySequence(), &SiteTree::newSession);
+    actNewSession->setToolTip(tr("New session"));
+    actNewFolder = make(qssh::themeIcon({"folder-new"}, QStyle::SP_FileDialogNewFolder),
+                        tr("New Folder..."), QKeySequence(), &SiteTree::newFolder);
+    actNewFolder->setToolTip(tr("New folder"));
+    actCut = make(qssh::themeIcon({"edit-cut"}, QStyle::SP_DialogDiscardButton),
+                  tr("Cut"), QKeySequence::Cut, &SiteTree::cut);
+    actCopy = make(qssh::themeIcon({"edit-copy"}, QStyle::SP_FileIcon),
+                   tr("Copy"), QKeySequence::Copy, &SiteTree::copy);
+    actPaste = make(qssh::themeIcon({"edit-paste"}, QStyle::SP_DialogApplyButton),
+                    tr("Paste"), QKeySequence::Paste, &SiteTree::paste);
+    actDelete = make(qssh::themeIcon({"edit-delete"}, QStyle::SP_TrashIcon),
+                     tr("Delete"), QKeySequence::Delete, &SiteTree::deleteSelected);
+    actRename = make(QIcon(), tr("Rename"), QKeySequence(Qt::Key_F2), &SiteTree::renameSelected);
+    actProperties = make(qssh::themeIcon({"document-properties"}, QStyle::SP_FileDialogDetailedView),
+                         tr("Properties"), QKeySequence(Qt::ALT | Qt::Key_Return),
+                         &SiteTree::properties);
+
+    connect(this, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item) {
+        if (item && !isFolderItem(item))
+            connectSelected();
+    });
+    connect(this, &QTreeWidget::currentItemChanged, this, &SiteTree::updateActions);
+
+    ensureLoaded(parent);
+    allTrees().append(this);
+    rebuild();
+}
+
+SiteTree::~SiteTree()
+{
+    allTrees().removeAll(this);
+}
+
+void SiteTree::rebuild()
+{
+    QSet<QString> collapsed;
+    QDomElement selected = elementOf(currentItem());
+    for (QTreeWidgetItemIterator it(this); *it; ++it)
+        if (isFolderItem(*it) && !(*it)->isExpanded())
+            collapsed.insert(folderPath(*it));
+
+    clear();
+    QDomElement root = sharedDoc().documentElement();
+    rootItem = new QTreeWidgetItem(this);
+    rootItem->setText(0, tr("Sessions"));
+    rootItem->setIcon(0, qssh::themeIcon({"folder"}, QStyle::SP_DirIcon));
+    rootItem->setData(0, DomElementRole, QVariant::fromValue(TreeNode()));
+    rootItem->setData(0, DomNodeRole, QVariant::fromValue(root));
+    parseNode(root, rootItem);
+
+    for (QTreeWidgetItemIterator it(this); *it; ++it)
+        if (isFolderItem(*it))
+            (*it)->setExpanded(!collapsed.contains(folderPath(*it)));
+
+    if (QTreeWidgetItem *item = itemForElement(selected))
+        setCurrentItem(item);
+    setFilter(filterText);
+    updateActions();
+}
+
+void SiteTree::parseNode(const QDomElement &element, QTreeWidgetItem *parentItem)
+{
+    for (QDomElement child = element.firstChildElement(); !child.isNull();
+         child = child.nextSiblingElement()) {
+        if (child.tagName() == folderElement())
+            parseNode(child, addFolderItem(child, parentItem));
+        else if (child.tagName() == siteElement())
+            addSiteItem(child, parentItem);
+    }
+}
+
+QTreeWidgetItem *SiteTree::addFolderItem(const QDomElement &element, QTreeWidgetItem *parentItem)
+{
+    static const QIcon icon = qssh::themeIcon({"folder"}, QStyle::SP_DirIcon);
+    QTreeWidgetItem *item = new QTreeWidgetItem(parentItem);
+    QString title = element.attribute(nameAttribute());
+    item->setText(0, title.isEmpty() ? tr("Folder") : title);
+    item->setIcon(0, icon);
+    item->setData(0, DomElementRole, QVariant::fromValue(TreeNode()));
+    item->setData(0, DomNodeRole, QVariant::fromValue(element));
+    return item;
+}
+
+QTreeWidgetItem *SiteTree::addSiteItem(const QDomElement &element, QTreeWidgetItem *parentItem)
+{
+    static const QIcon icon = qssh::themeIcon({"utilities-terminal", "computer", "network-server"},
+                                              QStyle::SP_ComputerIcon);
+    QTreeWidgetItem *item = new QTreeWidgetItem(parentItem);
+    TreeNode node;
+    node.isFolder = false;
+    node.siteInfo = siteInfoFromElement(element);
+    item->setText(0, node.siteInfo.sitename);
+    item->setIcon(0, icon);
+    const SiteInfo &s = node.siteInfo;
+    item->setToolTip(0, QStringLiteral("%1%2:%3")
+                            .arg(s.username.isEmpty() ? QString() : s.username + '@', s.hostname)
+                            .arg(s.port > 0 ? s.port : 22));
+    item->setData(0, DomElementRole, QVariant::fromValue(node));
+    item->setData(0, DomNodeRole, QVariant::fromValue(element));
+    return item;
+}
+
+QTreeWidgetItem *SiteTree::itemForElement(const QDomElement &element) const
+{
+    if (element.isNull())
+        return nullptr;
+    for (QTreeWidgetItemIterator it(const_cast<SiteTree *>(this)); *it; ++it)
+        if (elementOf(*it) == element)
+            return *it;
+    return nullptr;
+}
+
 // Folder that new entries go into: the selected folder, or the folder
 // containing the selected site, or the top level.
 QTreeWidgetItem *SiteTree::targetFolderItem() const
 {
     QTreeWidgetItem *cur = currentItem();
-    if (!cur || !cur->isSelected())
-        return nullptr;
+    if (!cur)
+        return rootItem;
     return isFolderItem(cur) ? cur : cur->parent();
 }
 
-QDomElement SiteTree::folderElementFor(QTreeWidgetItem *folderItem)
+// Saves the shared document and refreshes every open tree
+void SiteTree::commit(const QDomElement &select)
 {
-    QDomElement parent = elementOf(folderItem);
-    if (parent.isNull()) {
-        parent = domDocument.documentElement();
-        if (parent.isNull()) {
-            parent = domDocument.createElement("sites");
-            domDocument.appendChild(parent);
-        }
+    if (!saveShared())
+        QMessageBox::warning(window(), tr("Session Manager"),
+                             tr("Cannot write %1").arg(sitesFilePath()));
+    for (SiteTree *tree : allTrees())
+        tree->rebuild();
+    if (QTreeWidgetItem *item = itemForElement(select)) {
+        for (QTreeWidgetItem *p = item->parent(); p; p = p->parent())
+            p->setExpanded(true);
+        setCurrentItem(item);
+        scrollToItem(item);
     }
-    return parent;
 }
 
-void SiteTree::saveOrWarn()
+void SiteTree::updateActions()
 {
-    if (!save())
-        QMessageBox::warning(window(), tr("Session Manager"),
-                             tr("Cannot write %1").arg(xmlfile.fileName()));
+    QTreeWidgetItem *cur = currentItem();
+    const bool editable = cur && cur != rootItem;
+    actConnect->setEnabled(hasSiteSelected());
+    actCut->setEnabled(editable);
+    actCopy->setEnabled(editable);
+    actPaste->setEnabled(!clipElement.isNull() && !clipElement.parentNode().isNull());
+    actDelete->setEnabled(editable);
+    actRename->setEnabled(editable);
+    actProperties->setEnabled(editable);
+}
+
+bool SiteTree::hasSiteSelected() const
+{
+    return currentItem() && !isFolderItem(currentItem());
+}
+
+SiteInfo SiteTree::selectedSite() const
+{
+    return hasSiteSelected() ? currentItem()->data(0, DomElementRole).value<TreeNode>().siteInfo
+                             : SiteInfo();
+}
+
+bool SiteTree::findSite(const QString &name, SiteInfo *info) const
+{
+    for (QTreeWidgetItemIterator it(const_cast<SiteTree *>(this)); *it; ++it) {
+        const TreeNode node = (*it)->data(0, DomElementRole).value<TreeNode>();
+        if (!node.isFolder && node.siteInfo.sitename.compare(name, Qt::CaseInsensitive) == 0) {
+            *info = node.siteInfo;
+            return true;
+        }
+    }
+    return false;
+}
+
+void SiteTree::connectSelected()
+{
+    if (hasSiteSelected())
+        emit connectRequested(selectedSite());
+}
+
+void SiteTree::addSite(const SiteInfo &info)
+{
+    QDomElement siteEl = sharedDoc().createElement(siteElement());
+    writeSiteElement(sharedDoc(), siteEl, info);
+    elementOf(targetFolderItem()).appendChild(siteEl);
+    commit(siteEl);
 }
 
 void SiteTree::newSession()
 {
     SiteInfo info;
-    if (!editSiteInfo(window(), tr("New Session"), info))
-        return;
-
-    QTreeWidgetItem *parentItem = targetFolderItem();
-    QDomElement parentEl = folderElementFor(parentItem);
-    QDomElement siteEl = domDocument.createElement(siteElement());
-    writeSiteElement(domDocument, siteEl, info);
-    parentEl.appendChild(siteEl);
-
-    parseSite(siteEl, parentItem);
-    QTreeWidgetItem *item = parentItem ? parentItem->child(parentItem->childCount() - 1)
-                                       : topLevelItem(topLevelItemCount() - 1);
-    if (parentItem)
-        parentItem->setExpanded(true);
-    setCurrentItem(item);
-    saveOrWarn();
+    if (editSiteDialog(window(), tr("New Session"), info))
+        addSite(info);
 }
 
 void SiteTree::newFolder()
@@ -351,181 +483,270 @@ void SiteTree::newFolder()
                                                QLineEdit::Normal, QString(), &ok).trimmed();
     if (!ok || name.isEmpty())
         return;
-
-    QTreeWidgetItem *parentItem = targetFolderItem();
-    QDomElement parentEl = folderElementFor(parentItem);
-    QDomElement folderEl = domDocument.createElement(folderElement());
+    QDomElement folderEl = sharedDoc().createElement(folderElement());
     folderEl.setAttribute(nameAttribute(), name);
-    parentEl.appendChild(folderEl);
-
-    QTreeWidgetItem *item = parseFolderElement(folderEl, parentItem);
-    if (parentItem)
-        parentItem->setExpanded(true);
-    setCurrentItem(item);
-    saveOrWarn();
+    elementOf(targetFolderItem()).appendChild(folderEl);
+    commit(folderEl);
 }
 
-void SiteTree::editSession()
+void SiteTree::cut()
 {
-    QTreeWidgetItem *item = currentItem();
-    QDomElement element = elementOf(item);
-    if (!item || !item->isSelected() || element.isNull())
+    QTreeWidgetItem *cur = currentItem();
+    if (!cur || cur == rootItem)
         return;
+    clipElement = elementOf(cur);
+    clipIsCut = true;
+    for (SiteTree *tree : allTrees())
+        tree->updateActions();
+}
 
-    if (isFolderItem(item)) {
-        bool ok = false;
-        const QString name = QInputDialog::getText(window(), tr("Rename Folder"), tr("Folder name:"),
-                                                   QLineEdit::Normal, item->text(0), &ok).trimmed();
-        if (!ok || name.isEmpty())
-            return;
-        element.setAttribute(nameAttribute(), name);
-        item->setText(0, name);
-    } else {
-        SiteInfo info = siteInfoFromElement(element);
-        if (!editSiteInfo(window(), tr("Edit Session"), info))
-            return;
-        writeSiteElement(domDocument, element, info);
-        TreeNode node;
-        node.isFolder = false;
-        node.siteInfo = siteInfoFromElement(element);
-        item->setData(0, DomElementRole, QVariant::fromValue(node));
-        item->setText(0, info.sitename);
+void SiteTree::copy()
+{
+    QTreeWidgetItem *cur = currentItem();
+    if (!cur || cur == rootItem)
+        return;
+    clipElement = elementOf(cur);
+    clipIsCut = false;
+    for (SiteTree *tree : allTrees())
+        tree->updateActions();
+}
+
+void SiteTree::paste()
+{
+    if (clipElement.isNull() || clipElement.parentNode().isNull())
+        return;
+    QDomElement target = elementOf(targetFolderItem());
+    if (clipIsCut && isAncestorOrSelf(clipElement, target)) {
+        QMessageBox::information(window(), tr("Paste"), tr("A folder cannot be moved into itself."));
+        return;
     }
-    saveOrWarn();
+
+    QDomElement pasted;
+    if (clipIsCut) {
+        pasted = clipElement;
+        target.appendChild(pasted);   // appendChild moves the node
+        clipElement = QDomElement();
+    } else {
+        pasted = clipElement.cloneNode(true).toElement();
+        // avoid two entries with the same name in one folder
+        const QString name = pasted.attribute(nameAttribute());
+        for (QDomElement sib = target.firstChildElement(); !sib.isNull(); sib = sib.nextSiblingElement()) {
+            if (sib.attribute(nameAttribute()) == name) {
+                pasted.setAttribute(nameAttribute(), tr("%1 - Copy").arg(name));
+                break;
+            }
+        }
+        target.appendChild(pasted);
+    }
+    commit(pasted);
 }
 
-void SiteTree::deleteSession()
+void SiteTree::deleteSelected()
 {
     QTreeWidgetItem *item = currentItem();
-    QDomElement element = elementOf(item);
-    if (!item || !item->isSelected() || element.isNull())
+    if (!item || item == rootItem)
         return;
-
     const QString question = isFolderItem(item)
         ? tr("Delete folder \"%1\" and all sessions in it?").arg(item->text(0))
         : tr("Delete session \"%1\"?").arg(item->text(0));
     if (QMessageBox::question(window(), tr("Delete"), question) != QMessageBox::Yes)
         return;
-
+    QDomElement element = elementOf(item);
+    if (isAncestorOrSelf(element, clipElement))
+        clipElement = QDomElement();
     element.parentNode().removeChild(element);
-    delete item;
-    saveOrWarn();
+    commit();
 }
 
-void SiteTree::parseSite(const QDomNode &node,
-                                  QTreeWidgetItem *parentItem){
-    QIcon machineico("./icon/site.ico");
-    QDomElement element = node.toElement();
-    QTreeWidgetItem *item = createItem(element, parentItem);
+void SiteTree::renameSelected()
+{
+    QTreeWidgetItem *item = currentItem();
+    if (!item || item == rootItem)
+        return;
+    bool ok = false;
+    const QString name = QInputDialog::getText(window(), tr("Rename"), tr("New name:"),
+                                               QLineEdit::Normal, item->text(0), &ok).trimmed();
+    if (!ok || name.isEmpty() || name == item->text(0))
+        return;
+    QDomElement element = elementOf(item);
+    element.setAttribute(nameAttribute(), name);
+    commit(element);
+}
 
-    QString title = element.attribute("name");
-
-    item->setFlags(item->flags() | Qt::ItemIsEditable);
-    item->setIcon(0, machineico);
-    item->setText(0, title);
-    
+void SiteTree::properties()
+{
+    QTreeWidgetItem *item = currentItem();
+    if (!item || item == rootItem)
+        return;
+    if (isFolderItem(item)) {
+        renameSelected();
+        return;
+    }
+    QDomElement element = elementOf(item);
     SiteInfo info = siteInfoFromElement(element);
-    TreeNode treenode;
-    treenode.isFolder = false;
-    treenode.siteInfo = info;
-    item->setData(0, DomElementRole, QVariant::fromValue(treenode));
+    if (!editSiteDialog(window(), tr("Session Properties"), info))
+        return;
+    writeSiteElement(sharedDoc(), element, info);
+    commit(element);
 }
 
-bool SiteTree::save() const
+void SiteTree::setFilter(const QString &text)
 {
-    const int IndentSize = 4;
-
-    // previously wrote at the read position of a ReadWrite handle, appending
-    // a second document to the file instead of replacing it
-    QFile out(xmlfile.fileName());
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
-        return false;
-    QTextStream stream(&out);
-    domDocument.save(stream, IndentSize);
-    return true;
+    filterText = text.trimmed();
+    if (!rootItem)
+        return;
+    applyFilter(rootItem, filterText.isEmpty());
+    rootItem->setHidden(false);
+    if (!filterText.isEmpty())
+        expandAll();
 }
 
-void SiteTree::updateDomElement(const QTreeWidgetItem *item, int column)
+// An item is shown when it matches, an enclosing folder matches, or
+// something inside it matches.
+bool SiteTree::applyFilter(QTreeWidgetItem *item, bool ancestorMatches)
 {
-    QDomElement element = item->data(0, DomElementRole).value<QDomElement>();
-    if (!element.isNull()) {
-        if (column == 0) {
-            QDomElement oldTitleElement = element.firstChildElement(siteElement());
-            QDomElement newTitleElement = domDocument.createElement(siteElement());
+    const bool self = item != rootItem && item->text(0).contains(filterText, Qt::CaseInsensitive);
+    bool anyChild = false;
+    for (int i = 0; i < item->childCount(); ++i)
+        anyChild |= applyFilter(item->child(i), ancestorMatches || self);
+    const bool visible = ancestorMatches || self || anyChild;
+    item->setHidden(!visible);
+    return visible;
+}
 
-            QDomText newTitleText = domDocument.createTextNode(item->text(0));
-            newTitleElement.appendChild(newTitleText);
+void SiteTree::contextMenuEvent(QContextMenuEvent *event)
+{
+    QTreeWidgetItem *item = itemAt(event->pos());
+    if (item)
+        setCurrentItem(item);
+    updateActions();
 
-            element.replaceChild(newTitleElement, oldTitleElement);
-        } else {
-            if (element.tagName() == siteElement())
-                element.setAttribute(nameAttribute(), item->text(1));
+    QMenu menu;
+    if (item && !isFolderItem(item)) {
+        menu.addAction(actConnect);
+        QFont bold = menu.font();
+        bold.setBold(true);
+        actConnect->setFont(bold);
+        menu.addSeparator();
+    }
+    menu.addAction(actCut);
+    menu.addAction(actCopy);
+    menu.addAction(actPaste);
+    menu.addSeparator();
+    menu.addAction(actDelete);
+    menu.addAction(actRename);
+    menu.addSeparator();
+    menu.addAction(actNewSession);
+    menu.addAction(actNewFolder);
+    menu.addSeparator();
+    menu.addAction(actProperties);
+    menu.exec(event->globalPos());
+    actConnect->setFont(QFont());
+}
+
+// ---------------------------------------------------------------------------
+// QSessionManagerWidget
+
+QSessionManagerWidget::QSessionManagerWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    siteTree = new SiteTree(this);
+    connect(siteTree, &SiteTree::connectRequested, this, &QSessionManagerWidget::connectRequested);
+
+    QToolBar *bar = new QToolBar(this);
+    bar->setIconSize(QSize(16, 16));
+    bar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    bar->addAction(siteTree->actConnect);
+    bar->addSeparator();
+    bar->addAction(siteTree->actNewSession);
+    bar->addAction(siteTree->actNewFolder);
+    bar->addSeparator();
+    bar->addAction(siteTree->actCut);
+    bar->addAction(siteTree->actCopy);
+    bar->addAction(siteTree->actPaste);
+    bar->addSeparator();
+    bar->addAction(siteTree->actDelete);
+    bar->addAction(siteTree->actProperties);
+
+    filter = new QLineEdit(this);
+    filter->setPlaceholderText(tr("Filter by folder/session name <Alt+I>"));
+    filter->setClearButtonEnabled(true);
+    filter->addAction(qssh::themeIcon({"edit-find"}, QStyle::SP_FileDialogContentsView),
+                      QLineEdit::TrailingPosition);
+    connect(filter, &QLineEdit::textChanged, siteTree, &SiteTree::setFilter);
+    // Enter in the filter connects to the first visible session
+    connect(filter, &QLineEdit::returnPressed, this, [this]() {
+        for (QTreeWidgetItemIterator it(siteTree, QTreeWidgetItemIterator::NotHidden); *it; ++it) {
+            if (!isFolderItem(*it)) {
+                siteTree->setCurrentItem(*it);
+                siteTree->connectSelected();
+                return;
+            }
         }
-    }
+    });
+    QShortcut *filterKey = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_I), this);
+    filterKey->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(filterKey, &QShortcut::activated, this, &QSessionManagerWidget::focusFilter);
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(2);
+    layout->addWidget(bar);
+    layout->addWidget(filter);
+    layout->addWidget(siteTree);
 }
 
-QTreeWidgetItem * SiteTree::parseFolderElement(const QDomElement &element,
-                                  QTreeWidgetItem *parentItem)
+void QSessionManagerWidget::focusFilter()
 {
-    QIcon folderico("./icon/folder.ico");
-    QTreeWidgetItem *item = createItem(element, parentItem);
-    TreeNode node;
-    item->setData(0, DomElementRole, QVariant::fromValue(node));
-    QString title = element.attribute("name");
-    if (title.isEmpty())
-        title = QObject::tr("Folder");
-
-    item->setFlags(item->flags() | Qt::ItemIsEditable);
-    item->setIcon(0, folderico);
-    item->setText(0, title);
-
-    item->setExpanded(true);
-    return item;
+    filter->setFocus();
+    filter->selectAll();
 }
 
-QTreeWidgetItem *SiteTree::createItem(const QDomElement &element,
-                                      QTreeWidgetItem *parentItem)
-{
-    QTreeWidgetItem *item;
-    if (parentItem) {
-        item = new QTreeWidgetItem(parentItem);
-    } else {
-        item = new QTreeWidgetItem(this);
-    }
-    item->setData(0, DomNodeRole, QVariant::fromValue(element));
-    return item;
-}
+// ---------------------------------------------------------------------------
+// QSiteTreeDialog
 
 QSiteTreeDialog::QSiteTreeDialog(QWidget *parent)
     : QDialog(parent)
 {
-   tree = new SiteTree(this);
-   QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    setWindowTitle(tr("Connect"));
+    manager = new QSessionManagerWidget(this);
+    connect(manager, &QSessionManagerWidget::connectRequested, this, [this](SiteInfo info) {
+        emit notifyNewSession(info);
+        accept();
+    });
 
-   toolbar = new QToolBar(this);
-   mainLayout->addWidget(toolbar);
-   mainLayout->addWidget(tree);
+    QSettings settings(QDir::homePath() + "/.qsshterm/qsshterm.ini", QSettings::IniFormat);
+    showOnStartup = new QCheckBox(tr("Show dialog on startup"), this);
+    showOnStartup->setChecked(settings.value("connectDialog/showOnStartup", true).toBool());
+    connect(showOnStartup, &QCheckBox::toggled, this, [](bool on) {
+        QSettings s(QDir::homePath() + "/.qsshterm/qsshterm.ini", QSettings::IniFormat);
+        s.setValue("connectDialog/showOnStartup", on);
+    });
 
-   this->setWindowTitle(QString::fromUtf8("SSH Session Manager"));
-   //QGridLayout *gridLayout = new QGridLayout(this);
+    QPushButton *connectButton = new QPushButton(tr("&Connect"), this);
+    connectButton->setDefault(true);
+    connectButton->setEnabled(tree()->hasSiteSelected());
+    connect(connectButton, &QPushButton::clicked, tree(), &SiteTree::connectSelected);
+    connect(tree(), &QTreeWidget::currentItemChanged, this, [this, connectButton]() {
+        connectButton->setEnabled(tree()->hasSiteSelected());
+    });
+    QPushButton *closeButton = new QPushButton(tr("Close"), this);
+    connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
 
-   //gridLayout->addWidget(tree,0,0,1,1);
-   initToolbar();
-   resize(400, 300);
+    QHBoxLayout *bottom = new QHBoxLayout;
+    bottom->addWidget(showOnStartup);
+    bottom->addStretch(1);
+    bottom->addWidget(connectButton);
+    bottom->addWidget(closeButton);
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->addWidget(manager);
+    layout->addLayout(bottom);
+    resize(420, 520);
 }
 
-void QSiteTreeDialog::initToolbar() {
-    
-    QIcon newicon("./icon/new.ico"); 
-    QIcon editicon("./icon/edit.ico"); 
-    QIcon deleteicon("./icon/delete.ico"); 
-    QIcon newfoldericon("./icon/new-folder.ico"); 
-    QAction * newAct = toolbar->addAction(newicon, "new");
-    QAction * editAct = toolbar->addAction(editicon, "edit");
-    QAction * deleteAct = toolbar->addAction(deleteicon, "delete");
-    QAction * newFolderAct = toolbar->addAction(newfoldericon, "new folder");
-    connect(newAct, &QAction::triggered, tree, &SiteTree::newSession);
-    connect(editAct, &QAction::triggered, tree, &SiteTree::editSession);
-    connect(deleteAct, &QAction::triggered, tree, &SiteTree::deleteSession);
-    connect(newFolderAct, &QAction::triggered, tree, &SiteTree::newFolder);
+void QSiteTreeDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+    manager->focusFilter();
 }

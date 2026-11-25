@@ -3,55 +3,67 @@
 #include "qsshterm_sftp.h"
 #include "qsshterm_common.h"
 #include <QtWidgets>
-#include <QApplication>
-#include <QDebug>
-#include <QMainWindow>
-#include <QTabWidget>
-#include <QMenu>
-#include <QPainter>
-#include <QPainterPath>
-#include <QSpinBox>
-#include <QLabel>
-#include <QToolTip>
 
+/**
+ * Main window, laid out like SecureCRT: menu bar, toolbar with a quick
+ * connect box, a dockable Session Manager on the left, session tabs in the
+ * middle and a status bar with connection details.
+ */
+class qsshTabTerm : public QMainWindow {
+    Q_OBJECT
 
-class qsshTabTerm: public QMainWindow {
-	Q_OBJECT
+public:
+    explicit qsshTabTerm(QWidget *parent = nullptr);
 
-	public:
-	    qsshTabTerm(QWidget *parent = 0): QMainWindow(parent), tabs(0), sessionMgr_dialog(0), sftp_dialog(0), sftp_mgr(0) {
-        init();
-      }
+    /** Shows the Connect dialog if the user has not turned that off. */
+    void showStartupDialog();
 
-      ~qsshTabTerm() {
-      }
+public slots:
+    void openSession(SiteInfo);
+    void openSession(int);
+    void tabSelected(int);
+    void changeTabIcon(QString termKey, SSHTermState state);
 
-      void init();
+protected:
+    bool eventFilter(QObject *obj, QEvent *ev) override;
+    void closeEvent(QCloseEvent *event) override;
 
-  protected :
-    bool eventFilter(QObject *obj, QEvent *ev);
+private:
+    QTabWidget *tabs = nullptr;
+    QSiteTreeDialog *connectDialog = nullptr;
+    QDockWidget *managerDock = nullptr;
+    QSessionManagerWidget *manager = nullptr;
+    QLineEdit *quickConnect = nullptr;
 
-  public slots:
-      void openSession(SiteInfo);
-      void openSession(int);
-      void tabSelected(int);
-      void changeTabIcon(QString termKey, SSHTermState state);
+    // actions that depend on having a session tab
+    QList<QAction *> sessionActions;
+    QAction *actSftp = nullptr;
 
-  private:
-      QTabWidget *tabs;
-      QSiteTreeDialog *sessionMgr_dialog;
-      QSSHTerm_Sftp_Dialog * sftp_dialog;
-      QAction * sftp_mgr;
-     	void initMenu();
-     	void initToolbar();
-     	void showSessionMgrDialog();  
-      void showSftpMgrDialog();
-      void showFindDialog();
-      void showAboutDialog();
-      void on_tab_rightMouse_pressed( int clickedItem, QPoint position );
-      QSSHTerm *termAt(int index) const;
-      int indexOfTerm(const QString &termKey) const;
+    // status bar
+    QLabel *statusMessage = nullptr;
+    QLabel *statusCipher = nullptr;
+    QLabel *statusHost = nullptr;
+    QLabel *statusSize = nullptr;
+    QLabel *statusTerm = nullptr;
+    QLabel *statusClock = nullptr;
 
-  private slots:
-      void closeTab(int);
+    void initActions();
+    void initDock();
+    void initStatusBar();
+    void updateStatus();
+    void updateSessionActions();
+
+    void showConnectDialog();
+    void showQuickConnectDialog();
+    void quickConnectFromBox();
+    void showSftpMgrDialog();
+    void showFindDialog();
+    void showAboutDialog();
+    void on_tab_rightMouse_pressed(int clickedItem, QPoint position);
+    QSSHTerm *termAt(int index) const;
+    QSSHTerm *currentTerm() const;
+    int indexOfTerm(const QString &termKey) const;
+
+private slots:
+    void closeTab(int);
 };
