@@ -117,7 +117,7 @@ private:
 
     ssh_session session = nullptr;
     ssh_channel channel = nullptr;
-    char buffer[4096];
+    char buffer[64 * 1024];
     QTimer *timer = nullptr;
     QSocketNotifier *read_notifier = nullptr;
 

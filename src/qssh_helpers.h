@@ -8,7 +8,10 @@
 
 namespace qssh {
 
-/** Applies user, host and port of the site to a freshly created session. */
+/**
+ * Applies user, host and port of the site to a freshly created session, then
+ * reads ~/.ssh/config for anything the site does not set.
+ */
 void applySiteOptions(ssh_session session, const SiteInfo &info);
 
 /**
@@ -19,7 +22,8 @@ void applySiteOptions(ssh_session session, const SiteInfo &info);
 bool verifyKnownHost(ssh_session session, QString *message);
 
 /**
- * Tries GSSAPI, the configured private key, the configured password and
+ * Tries GSSAPI, the configured private key, ssh-agent and the default
+ * ~/.ssh keys, the configured password and
  * keyboard-interactive (answered with the configured password) once each.
  * Returns an SSH_AUTH_* code.
  */

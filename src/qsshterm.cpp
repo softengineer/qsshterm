@@ -7,6 +7,8 @@ QSSHTerm::QSSHTerm(const SiteInfo &info, QWidget *parent)
     : QTermWidget(0, parent), siteInfo(info)
 {
   this->setColorScheme("Ubuntu");
+  // bidi shaping lays out every line through QTextLayout: very slow on bulk output
+  this->setBidiEnabled(false);
   changeFont();
 }
 
@@ -164,12 +166,18 @@ void QSSHSession::select_loop() {
     if (!channel)
         return;
 
+    // drain everything available into one chunk: one cross-thread signal and
+    // one terminal update per wakeup instead of one per 4 KB read
+    QByteArray data;
     int nbytes = 0;
     do {
       nbytes = ssh_channel_read_nonblocking(channel, buffer, sizeof(buffer), 0);
       if (nbytes > 0)
-          emit dispatchData(QByteArray(buffer, nbytes));
-    } while (nbytes > 0);
+          data.append(buffer, nbytes);
+    } while (nbytes > 0 && data.size() < 1024 * 1024);
+
+    if (!data.isEmpty())
+        emit dispatchData(data);
 
     if (nbytes == SSH_ERROR)
         sshStateCheck();

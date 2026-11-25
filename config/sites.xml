@@ -1,18 +1,21 @@
-<?xml version="1.0" encoding="UTF-8" ?> 
+<?xml version='1.0' encoding='UTF-8'?>
 <sites>
-	<folder name = "Demo group">
-		<site name = "dev server">
-			<host address = "dev.cosmoline.cloud" port = "22"/>
-			<username>ubuntu</username>
-			<password>xxx</password>
-		</site>
-		
-	</folder>
-	<folder name = "Demo Group 2">
-		<site name = "192.168.1.13">
-			<host address = "192.168.1.13" port = "22"/>
-			<username>admin</username>
-			<privatekey file = "C:/Work/Aws/ec2.pem"/>
-		</site>
-	</folder>
+    <folder name="Demo group">
+        <site name="dev server">
+            <host address="dev.cosmoline.cloud" port="22"/>
+            <username>ubuntu</username>
+            <password>xxx</password>
+        </site>
+        <site name="sshjump">
+            <host address="aknthc-gk1.t3.nz" port="22"/>
+            <username>davidf</username>
+        </site>
+    </folder>
+    <folder name="Demo Group 2">
+        <site name="192.168.1.13">
+            <host address="192.168.1.13" port="22"/>
+            <username>admin</username>
+            <privatekey file="C:/Work/Aws/ec2.pem"/>
+        </site>
+    </folder>
 </sites>

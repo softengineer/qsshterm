@@ -18,6 +18,11 @@ void applySiteOptions(ssh_session session, const SiteInfo &info)
         unsigned int port = static_cast<unsigned int>(info.port);
         ssh_options_set(session, SSH_OPTIONS_PORT, &port);
     }
+
+    // Pick up ~/.ssh/config (Host aliases, HostName, User, Port, IdentityFile,
+    // ProxyJump, ...) like the ssh command line client. Values set explicitly
+    // above take precedence; a missing config file is not an error.
+    ssh_options_parse_config(session, nullptr);
 }
 
 bool verifyKnownHost(ssh_session session, QString *message)
@@ -130,6 +135,14 @@ int authenticate(ssh_session session, const SiteInfo &info)
             if (isFinal(rc))
                 return rc;
         }
+    }
+
+    // ssh-agent, then IdentityFile entries from ~/.ssh/config and the
+    // default keys (~/.ssh/id_ed25519, id_ecdsa, id_rsa)
+    if (methods & SSH_AUTH_METHOD_PUBLICKEY) {
+        rc = ssh_userauth_publickey_auto(session, nullptr, nullptr);
+        if (isFinal(rc))
+            return rc;
     }
 
     const QByteArray password = info.password.toUtf8();

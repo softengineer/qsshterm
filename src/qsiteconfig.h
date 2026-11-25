@@ -19,6 +19,7 @@ class SiteTree : public QTreeWidget
 public:
     SiteTree(QWidget *parent = 0);
 
+    static QString sitesFilePath();
     bool load();
     bool save() const;
 
@@ -44,6 +45,9 @@ private:
              QTreeWidgetItem *parentItem = 0);
     void parseSite(const QDomNode &element,
                                   QTreeWidgetItem *parentItem = 0);
+    QTreeWidgetItem *targetFolderItem() const;
+    QDomElement folderElementFor(QTreeWidgetItem *folderItem);
+    void saveOrWarn();
     QTreeWidgetItem *createItem(const QDomElement &element,
                                 QTreeWidgetItem *parentItem = 0);
 

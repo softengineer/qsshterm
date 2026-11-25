@@ -39,39 +39,27 @@ int qsshTabTerm::indexOfTerm(const QString &termKey) const {
 }
 
 void qsshTabTerm::changeTabIcon(QString termKey, SSHTermState state){
-    int idx = tabs->currentIndex() ;
-
+    // called for every chunk of remote output: must stay cheap. QIcon::name()
+    // is empty for file icons, so the shown state is tracked in the tab data.
     int index = indexOfTerm(termKey);
     if (index < 0)
         return;   // tab already closed
-    QIcon tabIcon = tabs->tabIcon(index);
+    if (state == BUSY && index == tabs->currentIndex())
+        return;   // the visible tab never shows as busy
 
-    if (state == BUSY) {
-        if (idx == index)
-          return;
+    QTabBar *bar = tabs->tabBar();
+    QVariant shown = bar->tabData(index);
+    if (shown.isValid() && shown.toInt() == int(state))
+        return;
 
-       if (tabIcon.name() == "./icon/red.ico")
-          return;
-       else  {
-         QIcon icon("./icon/red.ico"); 
-         tabs->setTabIcon(index, icon);
-       }
-
-    } else if (state == IDLE){
-      if (tabIcon.name() == "./icon/green.ico")
-          return;
-       else  {
-         QIcon icon("./icon/green.ico"); 
-         tabs->setTabIcon(index, icon);
-       }
-    } else if (state == DISCONNECT) {
-      if (tabIcon.name() == "./icon/grey.ico")
-          return;
-       else  {
-         QIcon icon("./icon/grey.ico"); 
-         tabs->setTabIcon(index, icon);
-       }
-    }
+    static const QIcon red("./icon/red.ico");
+    static const QIcon green("./icon/green.ico");
+    static const QIcon grey("./icon/grey.ico");
+    const QIcon *icon = state == BUSY ? &red : state == IDLE ? &green : state == DISCONNECT ? &grey : nullptr;
+    if (!icon)
+        return;
+    bar->setTabData(index, int(state));
+    tabs->setTabIcon(index, *icon);
 }
 
 void qsshTabTerm::tabSelected(int idx) {
@@ -196,17 +184,45 @@ void qsshTabTerm::showFindDialog() {
        term->toggleShowSearchBar();
 }
 
+// Prefer the desktop icon theme, then a bundled file, then a Qt standard icon
+static QIcon toolbarIcon(const char *themeName, const QString &file, QStyle::StandardPixmap fallback)
+{
+  QIcon icon = QIcon::fromTheme(QString::fromLatin1(themeName));
+  if (icon.isNull() && !file.isEmpty() && QFile::exists(file))
+    icon = QIcon(file);
+  if (icon.isNull())
+    icon = QApplication::style()->standardIcon(fallback);
+  return icon;
+}
+
 void qsshTabTerm::initToolbar() {
-	QIcon icon("./icon/structure.ico"); 
-  QIcon sftp_icon("./icon/sftp.ico"); 
-	QToolBar *toolbar = this->addToolBar("main toolbar");
-  QAction * mgr = toolbar->addAction(icon, "sessionMgr");
-  sftp_mgr = toolbar->addAction(sftp_icon, "sftpMgr");
-  QShortcut * sessionshortcut = new QShortcut(QKeySequence("Alt+c"), this);
-  
+  QToolBar *toolbar = this->addToolBar(tr("Main Toolbar"));
+  toolbar->setObjectName("mainToolbar");
+  toolbar->setMovable(false);
+  toolbar->setIconSize(QSize(22, 22));
+  toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+
+  QAction *mgr = toolbar->addAction(
+      toolbarIcon("network-server", "./icon/structure.ico", QStyle::SP_DirHomeIcon),
+      tr("Session Manager"));
+  mgr->setToolTip(tr("Session Manager (Alt+C)\nOpen or manage saved SSH sites"));
+
+  sftp_mgr = toolbar->addAction(
+      toolbarIcon("folder-remote", "./icon/sftp.ico", QStyle::SP_DriveNetIcon),
+      tr("SFTP Manager"));
+  sftp_mgr->setToolTip(tr("SFTP Manager\nBrowse and transfer files on the current session"));
   sftp_mgr->setDisabled(true);   // enabled once a session tab exists
+
+  toolbar->addSeparator();
+  QAction *find = toolbar->addAction(
+      toolbarIcon("edit-find", QString(), QStyle::SP_FileDialogContentsView),
+      tr("Find"));
+  find->setToolTip(tr("Find (Ctrl+F)\nSearch in the current terminal"));
+
+  QShortcut * sessionshortcut = new QShortcut(QKeySequence("Alt+c"), this);
   connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
   connect(sftp_mgr, &QAction::triggered, this, &qsshTabTerm::showSftpMgrDialog);
+  connect(find, &QAction::triggered, this, &qsshTabTerm::showFindDialog);
   connect(sessionshortcut, &QShortcut::activated, this, &qsshTabTerm::showSessionMgrDialog);
 }
 
@@ -273,6 +289,7 @@ void qsshTabTerm::openSession(SiteInfo info) {
     int idx = tabs->addTab(term, labelTitle);
     QIcon icon("./icon/green.ico");
     tabs->setTabIcon(idx, icon);
+    tabs->tabBar()->setTabData(idx, int(IDLE));
     tabs->setCurrentIndex(idx);
     term->start();
     term->setFocus();
