@@ -142,9 +142,10 @@ public:
 
 protected:
     /**
-     * @reimp
+     * Runs in the child process before exec() (installed through
+     * QProcess::setChildProcessModifier(), Qt6 replacement of setupChildProcess()).
      */
-    virtual void setupChildProcess();
+    void setupPtyChildProcess();
 
 private:
     Q_PRIVATE_SLOT(d_func(), void _k_onStateChanged(QProcess::ProcessState))
@@ -158,6 +159,7 @@ private:
 class KPtyProcessPrivate : public KProcessPrivate {
 public:
     KPtyProcessPrivate() :
+        pty(nullptr),
         ptyChannels(KPtyProcess::NoChannels),
         addUtmp(false)
     {
@@ -165,7 +167,7 @@ public:
 
     void _k_onStateChanged(QProcess::ProcessState newState)
     {
-        if (newState == QProcess::NotRunning && addUtmp)
+        if (newState == QProcess::NotRunning && addUtmp && pty)
             pty->logout();
     }
 

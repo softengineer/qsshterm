@@ -18,7 +18,6 @@
 */
 #include <QMenu>
 #include <QAction>
-#include <QRegExp>
 #include <QDebug>
 
 #include "SearchBar.h"
@@ -81,6 +80,12 @@ void SearchBar::show()
     QWidget::show();
     widget.searchTextEdit->setFocus();
     widget.searchTextEdit->selectAll();
+}
+
+void SearchBar::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    emit searchBarHidden();
 }
 
 void SearchBar::noMatchFound()

@@ -35,21 +35,24 @@ SiteTree::SiteTree(QWidget *parent)
     setEditTriggers(QAbstractItemView::NoEditTriggers);
     folderIcon.addFile("./icon/folder.icon");
 
-    xmlfile.setFileName("./config/sites.xml");  
-    xmlfile.open(QIODevice::ReadOnly | QIODevice::WriteOnly);  
+    xmlfile.setFileName("./config/sites.xml");
     connect(this,SIGNAL(itemDoubleClicked(QTreeWidgetItem *, int)),this,SLOT(Ondoubleclicktree(QTreeWidgetItem *, int)));
     load();
 }
 
 void SiteTree::Ondoubleclicktree(QTreeWidgetItem *item, int column)
 {
+    Q_UNUSED(column);
+    if (!item)
+        return;
     QVariant data = item->data(0, DomElementRole);
     TreeNode node = data.value<TreeNode>();
     if (node.isFolder) {
         return;
     }
-    QSiteTreeDialog * dialog = static_cast<QSiteTreeDialog*>(parent());
-    emit dialog->notifyNewSession(node.siteInfo);
+    QSiteTreeDialog * dialog = qobject_cast<QSiteTreeDialog*>(window());
+    if (dialog)
+        emit dialog->notifyNewSession(node.siteInfo);
 }
 
 #if !defined(QT_NO_CONTEXTMENU) && !defined(QT_NO_CLIPBOARD)
@@ -61,11 +64,7 @@ void SiteTree::contextMenuEvent(QContextMenuEvent *event)
     if (item) {
         QVariant data = item->data(0, DomElementRole);
         TreeNode node = data.value<TreeNode>();
-        if (!item)
-            return;
-        const QString url = item->text(1);
-       
-        
+
         if (!node.isFolder) {
             QAction *openAction = contextMenu.addAction(tr("Open"));
             QAction *renameAction = contextMenu.addAction(tr("Rename"));
@@ -90,24 +89,27 @@ void SiteTree::contextMenuEvent(QContextMenuEvent *event)
             QAction *newSiteAction = contextMenu.addAction(tr("New Site"));
             QAction *newFolderAction = contextMenu.addAction(tr("New Folder"));
     }
-    QAction *action = contextMenu.exec(event->globalPos());
-   
+    contextMenu.exec(event->globalPos());
 }
 #endif // !QT_NO_CONTEXTMENU && !QT_NO_CLIPBOARD
 
 bool SiteTree::load()
 {
-    QString errorStr;
-    int errorLine;
-    int errorColumn;
-
-    if (!domDocument.setContent(const_cast<QFile *>(&xmlfile), true, &errorStr, &errorLine,
-                                &errorColumn)) {
+    if (!xmlfile.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(window(), tr("DOM Bookmarks"),
+                                 tr("Cannot read %1:\n%2")
+                                 .arg(xmlfile.fileName(), xmlfile.errorString()));
+        return false;
+    }
+    const QDomDocument::ParseResult result =
+        domDocument.setContent(&xmlfile, QDomDocument::ParseOption::UseNamespaceProcessing);
+    xmlfile.close();
+    if (!result) {
         QMessageBox::information(window(), tr("DOM Bookmarks"),
                                  tr("Parse error at line %1, column %2:\n%3")
-                                 .arg(errorLine)
-                                 .arg(errorColumn)
-                                 .arg(errorStr));
+                                 .arg(result.errorLine)
+                                 .arg(result.errorColumn)
+                                 .arg(result.errorMessage));
         return false;
     }
 
@@ -132,7 +134,7 @@ bool SiteTree::load()
 void SiteTree::parseNode(const QDomNode &element, QTreeWidgetItem *parentItem)
 {
       QDomNodeList list = element.childNodes();
-      for (int j = 0; j< list.length(); j++) {
+      for (int j = 0; j < list.size(); j++) {
             QDomNode node = list.at(j);
             if (node.nodeName() == "folder") {
                 QTreeWidgetItem * pnode = parseFolderElement(node.toElement(), parentItem);
@@ -164,14 +166,15 @@ void SiteTree::parseSite(const QDomNode &node,
     SiteInfo info;
     info.sitename = title;
     
-    for (int j=0; j<children.length(); j++) {
+    for (int j = 0; j < children.size(); j++) {
         QDomNode child = children.at(j);
         QDomElement elm = child.toElement();
         QString tagName = elm.tagName();
         if  (tagName== "host") {
                 info.hostname = elm.attribute("address");
-                bool ok;
-                info.port = elm.attribute("port").toInt(&ok, 10);
+                bool ok = false;
+                const int port = elm.attribute("port").toInt(&ok, 10);
+                info.port = (ok && port > 0 && port <= 65535) ? port : -1;
         } else if (tagName== "username") {
                 info.username = elm.text();
         } else if (tagName== "privatekey") {
@@ -190,8 +193,13 @@ bool SiteTree::save() const
 {
     const int IndentSize = 4;
 
-    QTextStream out(const_cast<QFile *>(&xmlfile));
-    domDocument.save(out, IndentSize);
+    // previously wrote at the read position of a ReadWrite handle, appending
+    // a second document to the file instead of replacing it
+    QFile out(xmlfile.fileName());
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        return false;
+    QTextStream stream(&out);
+    domDocument.save(stream, IndentSize);
     return true;
 }
 
@@ -229,8 +237,7 @@ QTreeWidgetItem * SiteTree::parseFolderElement(const QDomElement &element,
     item->setIcon(0, folderico);
     item->setText(0, title);
 
-    bool folded = true;
-    setItemExpanded(item, folded);
+    item->setExpanded(true);
     return item;
 }
 
@@ -246,12 +253,13 @@ QTreeWidgetItem *SiteTree::createItem(const QDomElement &element,
     return item;
 }
 
-QSiteTreeDialog::QSiteTreeDialog(QWidget *parent) 
+QSiteTreeDialog::QSiteTreeDialog(QWidget *parent)
+    : QDialog(parent)
 {
    tree = new SiteTree(this);
    QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-   toolbar = new QToolBar();
+   toolbar = new QToolBar(this);
    mainLayout->addWidget(toolbar);
    mainLayout->addWidget(tree);
 

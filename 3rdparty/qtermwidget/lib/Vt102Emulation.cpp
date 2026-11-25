@@ -44,7 +44,6 @@
 // Qt
 #include <QEvent>
 #include <QKeyEvent>
-#include <QByteRef>
 
 // KDE
 //#include <kdebug.h>
@@ -404,10 +403,8 @@ void Vt102Emulation::processWindowAttributeChange()
     return;
   }
 
-  QString newValue;
-  newValue.reserve(tokenBufferPos-i-2);
-  for (int j = 0; j < tokenBufferPos-i-2; j++)
-    newValue[j] = tokenBuffer[i+1+j];
+  // NOTE: the previous code wrote past the end of an empty QString (reserve() does not resize)
+  const QString newValue = QString::fromWCharArray(tokenBuffer+i+1, qMax(0, tokenBufferPos-i-2));
 
   _pendingTitleUpdates[attributeToChange] = newValue;
   _titleUpdateTimer->start(20);
@@ -952,8 +949,8 @@ void Vt102Emulation::sendMouseEvent( int cb, int cx, int cy , int eventType )
             // coordinate+32, no matter what the locale is. We could easily
             // convert manually, but QString can also do it for us.
             QChar coords[2];
-            coords[0] = cx + 0x20;
-            coords[1] = cy + 0x20;
+            coords[0] = QChar(char16_t(cx + 0x20));
+            coords[1] = QChar(char16_t(cy + 0x20));
             QString coordsStr = QString(coords, 2);
             QByteArray utf8 = coordsStr.toUtf8();
             snprintf(command, sizeof(command), "\033[M%c%s", cb + 0x20, utf8.constData());
@@ -1069,7 +1066,7 @@ void Vt102Emulation::sendKeyEvent( QKeyEvent* event )
         }
         else if ( !entry.text().isEmpty() )
         {
-            textToSend += _codec->fromUnicode(entry.text(true,modifiers));
+            textToSend += QByteArray(_encoder.encode(entry.text(true,modifiers)));
         }
         else if((modifiers & Qt::ControlModifier) && event->key() >= 0x40 && event->key() < 0x5f) {
             textToSend += (event->key() & 0x1f);
@@ -1084,7 +1081,7 @@ void Vt102Emulation::sendKeyEvent( QKeyEvent* event )
             textToSend += "\033[6~";
         }
         else {
-            textToSend += _codec->fromUnicode(event->text());
+            textToSend += QByteArray(_encoder.encode(event->text()));
         }
 
         sendData( textToSend.constData() , textToSend.length() );
@@ -1332,8 +1329,8 @@ char Vt102Emulation::eraseChar() const
 {
   KeyboardTranslator::Entry entry = _keyTranslator->findEntry(
                                             Qt::Key_Backspace,
-                                            0,
-                                            0);
+                                            Qt::NoModifier,
+                                            KeyboardTranslator::NoState);
   if ( entry.text().count() > 0 )
       return entry.text().at(0);
   else

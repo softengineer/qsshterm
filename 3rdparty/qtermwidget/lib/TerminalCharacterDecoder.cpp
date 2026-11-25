@@ -24,6 +24,7 @@
 
 // Qt
 #include <QTextStream>
+#include <cwctype>
 
 // KDE
 //#include <kdebug.h>

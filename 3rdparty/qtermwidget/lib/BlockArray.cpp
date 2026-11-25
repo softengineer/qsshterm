@@ -27,7 +27,11 @@
 #include "BlockArray.h"
 
 // System
+#ifdef _WIN32
 #include "mman.h"
+#else
+#include <sys/mman.h>
+#endif
 #include <sys/param.h>
 #include <unistd.h>
 #include <stdio.h>

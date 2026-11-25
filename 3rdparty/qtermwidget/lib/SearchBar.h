@@ -19,7 +19,6 @@
 #ifndef _SEARCHBAR_H
 #define	_SEARCHBAR_H
 
-#include <QRegExp>
 
 #include "ui_SearchBar.h"
 #include "HistorySearch.h"
@@ -43,9 +42,12 @@ signals:
     void highlightMatchesChanged(bool highlightMatches);
     void findNext();
     void findPrevious();
+    /** Emitted whenever the bar is hidden (Escape, close button or toggle). */
+    void searchBarHidden();
 
 protected:
     virtual void keyReleaseEvent(QKeyEvent* keyEvent);
+    void hideEvent(QHideEvent* event) override;
 
 private slots:
     void clearBackgroundColor();

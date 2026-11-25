@@ -30,10 +30,9 @@
 
 // Qt
 #include <QApplication>
-#include <QByteRef>
 #include <QDir>
 #include <QFile>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QFile>
 #include <QtDebug>
@@ -148,7 +147,7 @@ bool Session::isRunning() const
     return _shellProcess->state() == QProcess::Running;
 }
 
-void Session::setCodec(QTextCodec * codec)
+void Session::setCodec(QStringConverter::Encoding codec)
 {
     emulation()->setCodec(codec);
 }
@@ -387,7 +386,7 @@ void Session::setUserTitle( int what, const QString & caption )
 
     if (what == 31) {
         QString cwd=caption;
-        cwd=cwd.replace( QRegExp("^~"), QDir::homePath() );
+        cwd=cwd.replace( QRegularExpression(QStringLiteral("^~")), QDir::homePath() );
         emit openUrlRequest(cwd);
     }
 
@@ -457,8 +456,7 @@ void Session::monitorTimerDone()
 void Session::activityStateSet(int state)
 {
     if (state==NOTIFYBELL) {
-        QString s;
-        s.sprintf("Bell in session '%s'",_nameTitle.toUtf8().data());
+        QString s = QString::asprintf("Bell in session '%s'",_nameTitle.toUtf8().data());
 
         emit bellRequest( s );
     } else if (state==NOTIFYACTIVITY) {
@@ -596,16 +594,16 @@ void Session::done(int exitStatus)
     if (!_wantedClose || exitStatus != 0) {
 
         if (_shellProcess->exitStatus() == QProcess::NormalExit) {
-            message.sprintf("Session '%s' exited with status %d.",
+            message = QString::asprintf("Session '%s' exited with status %d.",
                           _nameTitle.toUtf8().data(), exitStatus);
         } else {
-            message.sprintf("Session '%s' crashed.",
+            message = QString::asprintf("Session '%s' crashed.",
                           _nameTitle.toUtf8().data());
         }
     }
 
     if ( !_wantedClose && _shellProcess->exitStatus() != QProcess::NormalExit )
-        message.sprintf("Session '%s' exited unexpectedly.",
+        message = QString::asprintf("Session '%s' exited unexpectedly.",
                         _nameTitle.toUtf8().data());
     else
         emit finished();

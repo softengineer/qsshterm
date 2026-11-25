@@ -4,14 +4,12 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    QIcon icon("./icon/qsshterm.ico"); 
-    qsshTabTerm *window = new qsshTabTerm();
-    QRect rect = QApplication::desktop()->screen()->rect();
-    int width = rect.width();
-    int height = rect.height();
-    window->setWindowIcon(icon);
-    window->resize(1024, 768);
-    //window->move(rect.center() - window->rect().center());
-    window->show();
-    return a.exec(); 
+    // libssh >= 0.8 is thread safe once initialised; do it once for all sessions
+    ssh_init();
+    QIcon icon("./icon/qsshterm.ico");
+    qsshTabTerm window;
+    window.setWindowIcon(icon);
+    window.resize(1024, 768);
+    window.show();
+    return a.exec();
 }

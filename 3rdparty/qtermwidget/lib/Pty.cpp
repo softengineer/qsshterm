@@ -152,7 +152,3 @@ int Pty::foregroundProcessGroup() const
     return 0;
 }
 
-void Pty::setupChildProcess()
-{
-    
-}

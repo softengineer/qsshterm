@@ -1,42 +1,35 @@
 #ifndef WIDGET_H
 #define WIDGET_H
 #include <libssh/libssh.h>
-#include <libssh/callbacks.h>
-#include <qtermwidget5/qtermwidget.h>
-#include <QApplication>
-#include <QGuiApplication> 
+#include <qtermwidget6/qtermwidget.h>
 #include <QtWidgets>
-#include <QDebug>
-#include <QTimer>
-#include <QBuffer>
+#include <QByteArray>
 #include <QThread>
-#include <QTcpSocket>
-#include <fstream>
 #include <QTimer>
 #include <QSocketNotifier>
 #include "qsiteconfig.h"
 #include "qsshterm_common.h"
 
 class QSSHSession;
-class qsshTabTerm;
-
 
 class QSSHTerm : public QTermWidget
 {
     Q_OBJECT
 public:
-    QSSHTerm(SiteInfo info, QWidget * parent = 0);
-    void setTabTermKey(const QString termKey) {
+    explicit QSSHTerm(const SiteInfo &info, QWidget *parent = nullptr);
+    ~QSSHTerm() override;
+
+    void setTabTermKey(const QString &termKey) {
         this->termKey = termKey;
     }
 
-    QString & getTermKey() {
+    const QString &getTermKey() const {
         return this->termKey;
     }
     void start();
     void changeFont();
 
-    SSHTermState state() {
+    SSHTermState state() const {
         return sessionState;
     }
 
@@ -46,82 +39,55 @@ public:
     SiteInfo siteInfo;
 
 public slots:
-	void readData(const char *data, int size);
-    void writeData(const char *data, int size);
-    void sessionError(int j);
+    /** Keyboard input from the terminal widget, forwarded to the SSH channel. */
+    void readData(const char *data, int size);
+    /** Output received from the SSH channel, shown in the terminal widget. */
+    void writeData(const QByteArray &data);
+    void sessionError(int code);
+    void sessionConnected();
 
 signals:
     void icon_change(QString termKey, SSHTermState state);
     void reconnect();
-    void sendData(const char *, int);
 
     /**
       open ssh session, connect to host
     */
     void connect_to();
-    void disconnect();
+    void disconnectSession();
     void reset();
-	void sendByteArray(const QByteArray array);
-    void resizeSshWindow(const int width, const int height);
-
-    void rightMouseButtonPressed();
-
+    void sendByteArray(const QByteArray &array);
+    void resizeSshWindow(int columns, int lines);
 
 protected:
-    void resizeEvent(QResizeEvent * event) {
-        emit resizeSshWindow(this->screenColumnsCount(), this->screenLinesCount());
-    }
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
-	QSSHSession *session;
+    QSSHSession *session = nullptr;
     QString termKey;
-    SSHTermState sessionState;
+    SSHTermState sessionState = IDLE;
+    bool reconnectPending = false;
     void sendChangeIcon();
 
-
 private slots:
-    void copySelect();
-    void mouseEvent();
+    void copySelect(bool available);
 };
 
-class QSSHSession :public QObject {
-	Q_OBJECT
+/**
+ * Owns the libssh session. Lives in its own thread; it never touches the
+ * QSSHTerm widget directly, everything goes through queued signals.
+ */
+class QSSHSession : public QObject {
+    Q_OBJECT
 
-	public:
+public:
+    QSSHSession(const SiteInfo &info, int columns, int lines);
+    ~QSSHSession() override;
 
-	Q_ENUMS(SessionState)
-    enum State
-    {
-        StateClosed,
-        StateClosing,
-        StateInit,
-        StateConnecting,
-        StateIsKnown,
-        StateUnknownHost,
-        StateAuthChoose,
-        StateAuthContinue,
-        StateAuthNone,
-        StateAuthAutoPubkey,
-        StateAuthPassword,
-        StateAuthNeedPassword,
-        StateAuthKbi,
-        StateAuthKbiQuestions,
-        StateAuthAllFailed,
-        StateOpened,
-        StateError
-    };
-
-    QSSHSession(QObject *parent = 0, QSSHTerm * term = 0);
-	void deinit();
-
-    /**
-    * try to connect host again
-    */
-   
 public slots:
     void process();
-    void readByteArray(const QByteArray array);
-    void log(QString msg);
-    void resizeEvent(const int width, const int height);
+    void readByteArray(const QByteArray &array);
+    void resizeEvent(int columns, int lines);
 
     void reconnect();
 
@@ -131,32 +97,33 @@ public slots:
     void connect_to();
     void disconnect();
     void reset();
+    /** Disconnects and asks the owning thread to finish; the object deletes itself. */
+    void close();
 
 signals:
     void finished();
-    void error(QString err);
-    void dispatchData(const char *data, int size);
+    void dispatchData(const QByteArray &data);
     void sessionError(int);
+    void sessionConnected();
 
 private slots:
-    int select_loop();
+    void select_loop();
     void sshStateCheck();
 
+private:
+    SiteInfo siteInfo;
+    int columns;
+    int lines;
 
-private :
-	ssh_session session;
-	ssh_channel channel;
-    char buffer[1024];
-	QSSHTerm *qterm;
-    QTimer    *timer;
+    ssh_session session = nullptr;
+    ssh_channel channel = nullptr;
+    char buffer[4096];
+    QTimer *timer = nullptr;
+    QSocketNotifier *read_notifier = nullptr;
 
-    QSocketNotifier * read_notifier;
-    QSocketNotifier * error_notifier;
-	void shell(ssh_session session);
-	void error(ssh_session session);
-	int authenticate_kbdint(ssh_session session, const char *password);
-	int authenticate_console(ssh_session session);
-
+    bool shell();
+    void fail(const QString &message);
+    void emitText(const QString &text);
 };
 
 #endif // WIDGET_H

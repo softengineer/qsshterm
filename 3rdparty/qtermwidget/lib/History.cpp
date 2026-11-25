@@ -26,9 +26,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
+#ifdef _WIN32
 #include "mman.h"
+#else
+#include <sys/mman.h>
+#endif
 #include <unistd.h>
 #include <errno.h>
+#include <algorithm>
 
 #include <QtDebug>
 
@@ -313,7 +318,7 @@ void HistoryScrollBuffer::addCellsVector(const QVector<Character>& cells)
 void HistoryScrollBuffer::addCells(const Character a[], int count)
 {
   HistoryLine newLine(count);
-  qCopy(a,a+count,newLine.begin());
+  std::copy(a,a+count,newLine.begin());
 
   addCellsVector(newLine);
 }
@@ -729,7 +734,7 @@ void CompactHistoryScroll::addCellsVector ( const TextLine& cells )
 void CompactHistoryScroll::addCells ( const Character a[], int count )
 {
   TextLine newLine ( count );
-  qCopy ( a,a+count,newLine.begin() );
+  std::copy( a,a+count,newLine.begin() );
   addCellsVector ( newLine );
 }
 

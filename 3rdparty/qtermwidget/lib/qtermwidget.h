@@ -102,7 +102,7 @@ public:
     void setArgs(const QStringList & args);
 
     //Text codec, default is UTF-8
-    void setTextCodec(QTextCodec * codec);
+    void setTextCodec(QStringConverter::Encoding codec);
 
     /** @brief Sets the color scheme, default is white on black
      *

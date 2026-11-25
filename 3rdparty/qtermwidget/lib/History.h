@@ -35,7 +35,11 @@
 #include "Character.h"
 
 // map
+#ifdef _WIN32
 #include "mman.h"
+#else
+#include <sys/mman.h>
+#endif
 
 namespace Konsole
 {

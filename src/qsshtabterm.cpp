@@ -11,62 +11,39 @@ void qsshTabTerm::init() {
   tabs = new QTabWidget(centralWidget);
   QTabBar * tabBar =  tabs->tabBar();
   tabBar->setMovable(true);
-  tabs->setStyleSheet("QWidget#custom_tab, QWidget#templates_tab{\
-                         background-color: red; \    
-                      }");
   tabs->setTabsClosable(true);
   connect(tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTab(int)));
   connect(tabs, SIGNAL(currentChanged(int)), this, SLOT(tabSelected(int)));
-  connect(tabBar, SIGNAL(tabMoved(int, int)), this, SLOT(tabMoved(int, int)));
   QGridLayout *gridLayout = new QGridLayout(centralWidget);
 
   gridLayout->addWidget(tabs,0,0,1,1);
   this->setCentralWidget(centralWidget);
-  tabs->installEventFilter(this);
-  this->termKeyHash.clear();
+  tabBar->installEventFilter(this);
   showSessionMgrDialog();
  
 }
 
-void qsshTabTerm::tabMoved(int to, int from) {
-  qDebug() << "received move signal, from: " << from << ", to :" << to ;
-   if (from == to)
-      return;
-   QHashIterator<QString, int> itr(termKeyHash);
-   QString termKey;
+QSSHTerm *qsshTabTerm::termAt(int index) const {
+    return qobject_cast<QSSHTerm*>(tabs->widget(index));
+}
 
-   while (itr.hasNext()) {
-        itr.next();
-        if (itr.value() == from) 
-            termKey = itr.key();
-   } 
-
-   itr = QHashIterator<QString, int> (termKeyHash);
-   while (itr.hasNext()) {
-        itr.next();
-        if (itr.key().length() ==0)
-          continue;
-
-        if (from > to)  { 
-           // move backward
-          if (itr.value() >= to && itr.value() < from) {
-            termKeyHash[itr.key()] = itr.value() + 1;
-          }
-        }  else {
-          // move forward
-          if (itr.value() > from && itr.value() <= to) {
-            termKeyHash[itr.key()] = itr.value() - 1;
-          }
-        }
-    } 
-
-    this->termKeyHash[termKey] = to;
+// Tabs are looked up by key instead of a cached key->index map, which went
+// stale whenever tabs were moved or closed.
+int qsshTabTerm::indexOfTerm(const QString &termKey) const {
+    for (int i = 0; i < tabs->count(); ++i) {
+        QSSHTerm *term = termAt(i);
+        if (term && term->getTermKey() == termKey)
+            return i;
+    }
+    return -1;
 }
 
 void qsshTabTerm::changeTabIcon(QString termKey, SSHTermState state){
     int idx = tabs->currentIndex() ;
 
-    int index = termKeyHash[termKey];
+    int index = indexOfTerm(termKey);
+    if (index < 0)
+        return;   // tab already closed
     QIcon tabIcon = tabs->tabIcon(index);
 
     if (state == BUSY) {
@@ -100,37 +77,26 @@ void qsshTabTerm::changeTabIcon(QString termKey, SSHTermState state){
 void qsshTabTerm::tabSelected(int idx) {
         if (idx == -1)
             return;
-        QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
-        if (term->state() == BUSY) {
+        QSSHTerm * term = termAt(idx);
+        if (term && term->state() == BUSY) {
           this->changeTabIcon(term->getTermKey(), IDLE);
           term->setState(IDLE);
         }
 }
 
 bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
-        if (obj != tabs)
+        if (obj != tabs->tabBar())
                 return QObject::eventFilter(obj, event);
 
-        
- 
         if (event->type() != QEvent::MouseButtonPress)
                 return QObject::eventFilter(obj, event);
- 
-        // compute the tab number
+
+        // compute the tab number (the filter sits on the tab bar, so the
+        // position is already in tab bar coordinates)
         QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
-        QPoint position = mouseEvent->pos();
-        int c = tabs->tabBar()->count();
-        int clickedItem = -1;
- 
-        for (int i=0; i<c; i++)
-        {
-                if ( tabs->tabBar()->tabRect(i).contains( position ) )
-                {
-                        clickedItem = i;
-                        break;
-                }
-        }
- 
+        QPoint position = mouseEvent->position().toPoint();
+        int clickedItem = tabs->tabBar()->tabAt(position);
+
         // just in case
         if (clickedItem == -1)
                 return QObject::eventFilter(obj, event);
@@ -145,7 +111,7 @@ bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
                         on_tab_rightMouse_pressed( clickedItem, position );
                         break;
  
-                case Qt::MidButton:
+                case Qt::MiddleButton:
                         return QObject::eventFilter(obj, event);
                         break;
  
@@ -157,20 +123,15 @@ bool qsshTabTerm::eventFilter(QObject *obj, QEvent *event){
 }
 
 void qsshTabTerm::closeTab(int index) {
-    QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
-    emit term->disconnect();
-    disconnect(term, 0, 0, 0);
+    QSSHTerm * term = termAt(index);
+    if (!term)
+        return;
+    disconnect(term, nullptr, this, nullptr);
     tabs->removeTab(index);
-    this->termKeyHash.remove(term->getTermKey());
-    QHashIterator<QString, int> itr(termKeyHash);
-    while (itr.hasNext()) {
-        itr.next();
-        if (itr.value() > index) {
-          termKeyHash[itr.key()] = itr.value() - 1;
-        }
-    } 
+    // removeTab() does not delete the page; the destructor closes the SSH session
+    term->deleteLater();
 
-    if (tabs->tabBar()->count() ==0 ) {
+    if (tabs->count() == 0) {
       sftp_mgr->setDisabled(true);
     }
 }
@@ -188,12 +149,21 @@ void qsshTabTerm::on_tab_rightMouse_pressed( int clickedItem, QPoint pos ){
    contextMenu.addAction(&connectAct);
    contextMenu.addAction(&resetAct);
    contextMenu.addAction(&closeAct);
-   connect(&duplicateAct, &QAction::triggered, [this, clickedItem]() {
+   connect(&duplicateAct, &QAction::triggered, this, [this, clickedItem]() {
         this->openSession(clickedItem);
    });
-   contextMenu.exec(tabs->mapToGlobal(pos));
-   disconnect(&duplicateAct, 0, 0, 0);
-  
+   connect(&connectAct, &QAction::triggered, this, [this, clickedItem]() {
+        if (QSSHTerm *term = termAt(clickedItem))
+            emit term->reconnect();
+   });
+   connect(&resetAct, &QAction::triggered, this, [this, clickedItem]() {
+        if (QSSHTerm *term = termAt(clickedItem))
+            emit term->reset();
+   });
+   connect(&closeAct, &QAction::triggered, this, [this, clickedItem]() {
+        this->closeTab(clickedItem);
+   });
+   contextMenu.exec(tabs->tabBar()->mapToGlobal(pos));
 }
 
 void qsshTabTerm::initMenu() {
@@ -222,8 +192,8 @@ void qsshTabTerm::showFindDialog() {
    int idx = tabs->currentIndex() ;
    if (idx == -1)
       return;
-   QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(idx));
-   emit term->toggleShowSearchBar();
+   if (QSSHTerm * term = termAt(idx))
+       term->toggleShowSearchBar();
 }
 
 void qsshTabTerm::initToolbar() {
@@ -234,7 +204,7 @@ void qsshTabTerm::initToolbar() {
   sftp_mgr = toolbar->addAction(sftp_icon, "sftpMgr");
   QShortcut * sessionshortcut = new QShortcut(QKeySequence("Alt+c"), this);
   
-  //sftp_mgr->setDisabled(true);
+  sftp_mgr->setDisabled(true);   // enabled once a session tab exists
   connect(mgr, &QAction::triggered, this, &qsshTabTerm::showSessionMgrDialog);
   connect(sftp_mgr, &QAction::triggered, this, &qsshTabTerm::showSftpMgrDialog);
   connect(sessionshortcut, &QShortcut::activated, this, &qsshTabTerm::showSessionMgrDialog);
@@ -251,10 +221,10 @@ void qsshTabTerm::showSessionMgrDialog() {
 }
 
 void qsshTabTerm::showSftpMgrDialog() {
-    int index = tabs->currentIndex();
-    QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
+    QSSHTerm * term = termAt(tabs->currentIndex());
+    if (!term)
+        return;
    if (!sftp_dialog) {
-    qDebug() <<" init sftp dialog";
         sftp_dialog=new QSSHTerm_Sftp_Dialog(this);
         sftp_dialog->setModal(true);
     } 
@@ -264,7 +234,7 @@ void qsshTabTerm::showSftpMgrDialog() {
 }
 
 void qsshTabTerm::showAboutDialog() {
-    QMessageBox::information(NULL, "About", "QSSHTerm V0.1a \nAuthor: David.Fan \nLicense: LGPL", QMessageBox::Ok, QMessageBox::Ok);
+    QMessageBox::information(this, "About", "QSSHTerm V0.1a \nAuthor: David.Fan \nLicense: LGPL", QMessageBox::Ok, QMessageBox::Ok);
 }
 
 void qsshTabTerm::openSession(SiteInfo info) {
@@ -297,22 +267,21 @@ void qsshTabTerm::openSession(SiteInfo info) {
     } 
 
     QSSHTerm *term = new QSSHTerm(info);
-    int idx = tabs->addTab(term, labelTitle);
-
-    this->termKeyHash[labelTitle] = idx;
     term->setTabTermKey(labelTitle);
-    term->start();
-    tabs->setCurrentIndex(idx);
-    term->setFocus();
-    sessionMgr_dialog->hide();
-    QIcon icon("./icon/green.ico"); 
+    // connect before start() so no state change is missed
+    connect(term, &QSSHTerm::icon_change, this, &qsshTabTerm::changeTabIcon);
+    int idx = tabs->addTab(term, labelTitle);
+    QIcon icon("./icon/green.ico");
     tabs->setTabIcon(idx, icon);
+    tabs->setCurrentIndex(idx);
+    term->start();
+    term->setFocus();
+    if (sessionMgr_dialog)
+        sessionMgr_dialog->hide();
     sftp_mgr->setEnabled(true);
-    connect(term, SIGNAL(icon_change(QString, SSHTermState)), this, SLOT(changeTabIcon(QString, SSHTermState)));
-  
 }
 
 void qsshTabTerm::openSession(int index) {
-     QSSHTerm * term = static_cast<QSSHTerm*> (tabs->widget(index));
-     this->openSession(term->siteInfo);
+     if (QSSHTerm * term = termAt(index))
+         this->openSession(term->siteInfo);
 }

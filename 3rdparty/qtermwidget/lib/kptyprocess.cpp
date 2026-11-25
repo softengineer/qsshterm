@@ -40,12 +40,18 @@
 KPtyProcess::KPtyProcess(QObject *parent) :
     KProcess(new KPtyProcessPrivate, parent)
 {
-    }
+#ifdef Q_OS_UNIX
+    setChildProcessModifier([this]() { setupPtyChildProcess(); });
+#endif
+}
 
 KPtyProcess::KPtyProcess(int ptyMasterFd, QObject *parent) :
     KProcess(new KPtyProcessPrivate, parent)
 {
-   ;
+    Q_UNUSED(ptyMasterFd);
+#ifdef Q_OS_UNIX
+    setChildProcessModifier([this]() { setupPtyChildProcess(); });
+#endif
 }
 
 KPtyProcess::~KPtyProcess()
@@ -62,7 +68,9 @@ void KPtyProcess::setPtyChannels(PtyChannels channels)
 
 KPtyProcess::PtyChannels KPtyProcess::ptyChannels() const
 {
-    return NULL;
+    Q_D(const KPtyProcess);
+
+    return d->ptyChannels;
 }
 
 void KPtyProcess::setUseUtmp(bool value)
@@ -80,9 +88,13 @@ KPtyDevice *KPtyProcess::pty() const
     return 0;
 }
 
-void KPtyProcess::setupChildProcess()
+void KPtyProcess::setupPtyChildProcess()
 {
     Q_D(KPtyProcess);
+
+    // The PTY is not created in this (Windows compatible) fork; nothing to wire up.
+    if (!d->pty)
+        return;
 
     d->pty->setCTty();
 
@@ -98,8 +110,6 @@ void KPtyProcess::setupChildProcess()
 
     if (d->ptyChannels & StderrChannel)
         dup2(d->pty->slaveFd(), 2);
-
-    KProcess::setupChildProcess();
 }
 
 //#include "kptyprocess.moc"

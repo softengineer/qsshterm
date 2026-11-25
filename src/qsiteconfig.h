@@ -10,6 +10,8 @@
 #include <QVariant>
 #include "qsshterm_common.h"
 
+class QToolBar;
+
 class SiteTree : public QTreeWidget
 {
     Q_OBJECT

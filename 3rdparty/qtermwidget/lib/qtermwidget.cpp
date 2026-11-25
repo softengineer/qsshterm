@@ -83,7 +83,7 @@ Session *TermWidgetImpl::createSession(QWidget* parent)
     session->setArguments(args);
     session->setAutoClose(true);
 
-    session->setCodec(QTextCodec::codecForName("UTF-8"));
+    session->setCodec(QStringConverter::Utf8);
 
     session->setFlowControlEnabled(true);
     session->setHistoryType(HistoryTypeBuffer(1000));
@@ -169,9 +169,11 @@ void QTermWidget::search(bool forwards, bool next)
     qDebug() << "current selection starts at: " << startColumn << startLine;
     qDebug() << "current cursor position: " << m_impl->m_terminalDisplay->screenWindow()->cursorPosition();
 
-    QRegExp regExp(m_searchBar->searchText());
-    regExp.setPatternSyntax(m_searchBar->useRegularExpression() ? QRegExp::RegExp : QRegExp::FixedString);
-    regExp.setCaseSensitivity(m_searchBar->matchCase() ? Qt::CaseSensitive : Qt::CaseInsensitive);
+    const QString searchText = m_searchBar->searchText();
+    QRegularExpression regExp(m_searchBar->useRegularExpression() ? searchText
+                                                                   : QRegularExpression::escape(searchText));
+    if (!m_searchBar->matchCase())
+        regExp.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
 
     HistorySearch *historySearch =
             new HistorySearch(m_impl->m_session->emulation(), regExp, forwards, startColumn, startLine, this);
@@ -267,13 +269,13 @@ void QTermWidget::startTerminalTeletype()
 void QTermWidget::init(int startnow)
 {
     m_layout = new QVBoxLayout();
-    m_layout->setMargin(0);
+    m_layout->setContentsMargins(0, 0, 0, 0);
     setLayout(m_layout);
 
     // translations
     // First check $XDG_DATA_DIRS. This follows the implementation in libqtxdg
     QString d = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
-    QStringList dirs = d.split(QLatin1Char(':'), QString::SkipEmptyParts);
+    QStringList dirs = d.split(QLatin1Char(':'), Qt::SkipEmptyParts);
     if (dirs.isEmpty()) {
         dirs.append(QString::fromLatin1("/usr/local/share"));
         dirs.append(QString::fromLatin1("/usr/share"));
@@ -314,6 +316,11 @@ void QTermWidget::init(int startnow)
     connect(m_searchBar, SIGNAL(findPrevious()), this, SLOT(findPrevious()));
     m_layout->addWidget(m_searchBar);
     m_searchBar->hide();
+    // give keyboard focus back to the terminal once the search bar closes
+    connect(m_searchBar, &SearchBar::searchBarHidden, this, [this]() {
+        if (m_impl && m_impl->m_terminalDisplay)
+            m_impl->m_terminalDisplay->setFocus(Qt::OtherFocusReason);
+    });
 
     if (startnow && m_impl->m_session) {
         m_impl->m_session->run();
@@ -445,7 +452,7 @@ void QTermWidget::setArgs(const QStringList &args)
     m_impl->m_session->setArguments(args);
 }
 
-void QTermWidget::setTextCodec(QTextCodec *codec)
+void QTermWidget::setTextCodec(QStringConverter::Encoding codec)
 {
     if (!m_impl->m_session)
         return;

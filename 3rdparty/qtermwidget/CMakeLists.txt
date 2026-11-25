@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 
 project(qtermwidget)
 
@@ -8,7 +8,7 @@ include(CMakePackageConfigHelpers)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
 
-set(REQUIRED_QT_VERSION "5.7.1")
+set(REQUIRED_QT_VERSION "6.2.0")
 set(LXQTBT_MINIMUM_VERSION "0.5.0")
 
 option(UPDATE_TRANSLATIONS "Update source translation translations/*.ts files" OFF)
@@ -32,8 +32,9 @@ endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(Qt5Widgets "${REQUIRED_QT_VERSION}" REQUIRED)
-find_package(Qt5LinguistTools "${REQUIRED_QT_VERSION}" REQUIRED)
+find_package(Qt6 "${REQUIRED_QT_VERSION}" REQUIRED COMPONENTS Widgets)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # find_package(lxqt-build-tools ${LXQTBT_MINIMUM_VERSION} REQUIRED)
 
 #include(LXQtPreventInSourceBuilds)
@@ -41,7 +42,7 @@ find_package(Qt5LinguistTools "${REQUIRED_QT_VERSION}" REQUIRED)
 #include(LXQtCompilerSettings NO_POLICY_SCOPE)
 #include(LXQtCreatePkgConfigFile)
 
-set(QTERMWIDGET_LIBRARY_NAME qtermwidget5)
+set(QTERMWIDGET_LIBRARY_NAME qtermwidget6)
 
 option(USE_UTF8PROC "Use libutf8proc for better Unicode support. Default OFF" OFF)
 
@@ -75,7 +76,6 @@ set(SRCS
     lib/TerminalDisplay.cpp
     lib/tools.cpp
     lib/Vt102Emulation.cpp
-	lib/mman.c
 )
 
 # Only the Headers that need to be moc'd go here
@@ -93,7 +93,6 @@ set(HDRS
     lib/Session.h
     lib/TerminalDisplay.h
     lib/Vt102Emulation.h
-	lib/mman.h
 )
 
 set(UI
@@ -121,9 +120,9 @@ set(QTERMWIDGET_INCLUDE_DIR "${CMAKE_INSTALL_FULL_INCLUDEDIR}/${QTERMWIDGET_LIBR
 
 CHECK_FUNCTION_EXISTS(updwtmpx HAVE_UPDWTMPX)
 
-qt5_wrap_cpp(MOCS ${HDRS})
-qt5_wrap_ui(UI_SRCS ${UI})
-set(PKG_CONFIG_REQ "Qt5Widgets")
+qt6_wrap_cpp(MOCS ${HDRS})
+qt6_wrap_ui(UI_SRCS ${UI})
+set(PKG_CONFIG_REQ "Qt6Widgets")
 
 #lxqt_translate_ts(QTERMWIDGET_QM
 #    TRANSLATION_DIR "lib/translations"
@@ -137,8 +136,17 @@ set(PKG_CONFIG_REQ "Qt5Widgets")
 #        Runtime
 #)
 
+if(WIN32)
+    # POSIX shims (mmap, termios.h, grp.h, utmp.h) needed only on Windows.
+    # Kept in a separate directory so they never shadow the real system headers elsewhere.
+    list(APPEND SRCS lib/win32/mman.c)
+endif()
+
 add_library(${QTERMWIDGET_LIBRARY_NAME} SHARED ${SRCS} ${MOCS} ${UI_SRCS} ${QTERMWIDGET_QM})
-target_link_libraries(${QTERMWIDGET_LIBRARY_NAME} Qt5::Widgets)
+if(WIN32)
+    target_include_directories(${QTERMWIDGET_LIBRARY_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib/win32")
+endif()
+target_link_libraries(${QTERMWIDGET_LIBRARY_NAME} Qt6::Widgets)
 set_target_properties( ${QTERMWIDGET_LIBRARY_NAME} PROPERTIES
                        SOVERSION ${QTERMWIDGET_VERSION_MAJOR}
                        VERSION ${QTERMWIDGET_VERSION}
@@ -257,7 +265,7 @@ install(DIRECTORY
 #lxqt_create_pkgconfig_file(
 #    PACKAGE_NAME ${QTERMWIDGET_LIBRARY_NAME}
 #    DESCRIPTIVE_NAME ${QTERMWIDGET_LIBRARY_NAME}
-#    DESCRIPTION "QTermWidget library for Qt ${QTERMWIDGET_VERSION_MAJOR}.x"
+#    DESCRIPTION "QTermWidget library for Qt6 ${QTERMWIDGET_VERSION_MAJOR}.x"
 #    INCLUDEDIRS ${QTERMWIDGET_LIBRARY_NAME}
 #    LIBS ${QTERMWIDGET_LIBRARY_NAME}
 #    REQUIRES ${PKG_CONFIG_REQ}

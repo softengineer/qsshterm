@@ -220,14 +220,14 @@ void TerminalDisplay::fontChange(const QFont&)
   // "Base character width on widest ASCII character. This prevents too wide
   //  characters in the presence of double wide (e.g. Japanese) characters."
   // Get the width from representative normal width characters
-  _fontWidth = qRound((double)fm.width(REPCHAR)/(double)strlen(REPCHAR));
+  _fontWidth = qRound((double)fm.horizontalAdvance(QLatin1String(REPCHAR))/(double)strlen(REPCHAR));
 
   _fixedFont = true;
 
-  int fw = fm.width(REPCHAR[0]);
+  int fw = fm.horizontalAdvance(QLatin1Char(REPCHAR[0]));
   for(unsigned int i=1; i< strlen(REPCHAR); i++)
   {
-    if (fw != fm.width(REPCHAR[i]))
+    if (fw != fm.horizontalAdvance(QLatin1Char(REPCHAR[i])))
     {
       _fixedFont = false;
       break;
@@ -271,12 +271,8 @@ void TerminalDisplay::setVTFont(const QFont& f)
 {
   QFont font = f;
 
-    // This was originally set for OS X only:
-    //     mac uses floats for font width specification.
-    //     this ensures the same handling for all platforms
-    // but then there was revealed that various Linux distros
-    // have this problem too...
-    font.setStyleStrategy(QFont::ForceIntegerMetrics);
+    // QFont::ForceIntegerMetrics no longer exists in Qt6; font widths are
+    // rounded explicitly where they are computed (see fontChange()).
 
   QFontMetrics metrics(font);
 
@@ -873,7 +869,7 @@ void TerminalDisplay::drawTextFragment(QPainter& painter ,
     const QColor backgroundColor = style->backgroundColor.color(_colorTable);
 
     // draw background if different from the display's background color
-    if ( backgroundColor != palette().background().color() )
+    if ( backgroundColor != palette().window().color() )
         drawBackground(painter,rect,backgroundColor,
                        false /* do not use transparency */);
 
@@ -1274,7 +1270,7 @@ void TerminalDisplay::showResizeNotification()
      {
          const QString label = tr("Size: XXX x XXX");
         _resizeWidget = new QLabel(label, this);
-        _resizeWidget->setMinimumWidth(_resizeWidget->fontMetrics().width(label));
+        _resizeWidget->setMinimumWidth(_resizeWidget->fontMetrics().horizontalAdvance(label));
         _resizeWidget->setMinimumHeight(_resizeWidget->sizeHint().height());
         _resizeWidget->setAlignment(Qt::AlignCenter);
 
@@ -1372,7 +1368,7 @@ void TerminalDisplay::paintEvent( QPaintEvent* pe )
       const auto rects = (pe->region() & contentsRect()).rects();
       for (const QRect &rect : rects)
       {
-        drawBackground(paint,rect,palette().background().color(),
+        drawBackground(paint,rect,palette().window().color(),
                        true /* use opacity setting */);
         drawContents(paint, rect);
       }
@@ -1546,7 +1542,7 @@ int TerminalDisplay::textWidth(const int startColumn, const int length, const in
   QFontMetrics fm(font());
   int result = 0;
   for (int column = 0; column < length; column++) {
-    result += fm.width(_image[loc(startColumn + column, line)].character);
+    result += fm.horizontalAdvance(QString::fromWCharArray(&_image[loc(startColumn + column, line)].character, 1));
   }
   return result;
 }
@@ -1941,7 +1937,7 @@ void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
           spot->activate("click-action");
     }
   }
-  else if ( ev->button() == Qt::MidButton )
+  else if ( ev->button() == Qt::MiddleButton )
   {
     if ( _mouseMarks || (ev->modifiers() & Qt::ShiftModifier) )
       emitSelection(true,ev->modifiers() & Qt::ControlModifier);
@@ -2034,7 +2030,7 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent* ev)
     int button = 3;
     if (ev->buttons() & Qt::LeftButton)
         button = 0;
-    if (ev->buttons() & Qt::MidButton)
+    if (ev->buttons() & Qt::MiddleButton)
         button = 1;
     if (ev->buttons() & Qt::RightButton)
         button = 2;
@@ -2076,7 +2072,7 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent* ev)
   if (_actSel == 0) return;
 
  // don't extend selection while pasting
-  if (ev->buttons() & Qt::MidButton) return;
+  if (ev->buttons() & Qt::MiddleButton) return;
 
   extendSelection( ev->pos() );
 }
@@ -2332,9 +2328,9 @@ void TerminalDisplay::mouseReleaseEvent(QMouseEvent* ev)
 
   if ( !_mouseMarks &&
        ((ev->button() == Qt::RightButton && !(ev->modifiers() & Qt::ShiftModifier))
-                        || ev->button() == Qt::MidButton) )
+                        || ev->button() == Qt::MiddleButton) )
   {
-    emit mouseSignal( ev->button() == Qt::MidButton ? 1 : 2,
+    emit mouseSignal( ev->button() == Qt::MiddleButton ? 1 : 2,
                       charColumn + 1,
                       charLine + 1 +_scrollBar->value() -_scrollBar->maximum() ,
                       2);
@@ -2481,7 +2477,8 @@ void TerminalDisplay::mouseDoubleClickEvent(QMouseEvent* ev)
 
 void TerminalDisplay::wheelEvent( QWheelEvent* ev )
 {
-  if (ev->orientation() != Qt::Vertical)
+  const int delta = ev->angleDelta().y();
+  if (delta == 0)
     return;
 
   // if the terminal program is not interested mouse events
@@ -2501,10 +2498,10 @@ void TerminalDisplay::wheelEvent( QWheelEvent* ev )
         // to get a reasonable scrolling speed, scroll by one line for every 5 degrees
         // of mouse wheel rotation.  Mouse wheels typically move in steps of 15 degrees,
         // giving a scroll of 3 lines
-        int key = ev->delta() > 0 ? Qt::Key_Up : Qt::Key_Down;
+        int key = delta > 0 ? Qt::Key_Up : Qt::Key_Down;
 
         // QWheelEvent::delta() gives rotation in eighths of a degree
-        int wheelDegrees = ev->delta() / 8;
+        int wheelDegrees = delta / 8;
         int linesToScroll = abs(wheelDegrees) / 5;
 
         QKeyEvent keyScrollEvent(QEvent::KeyPress,key,Qt::NoModifier);
@@ -2519,9 +2516,9 @@ void TerminalDisplay::wheelEvent( QWheelEvent* ev )
 
     int charLine;
     int charColumn;
-    getCharacterPosition( ev->pos() , charLine , charColumn );
+    getCharacterPosition( ev->position().toPoint() , charLine , charColumn );
 
-    emit mouseSignal( ev->delta() > 0 ? 4 : 5,
+    emit mouseSignal( delta > 0 ? 4 : 5,
                       charColumn + 1,
                       charLine + 1 +_scrollBar->value() -_scrollBar->maximum() ,
                       0);
@@ -2602,8 +2599,12 @@ bool TerminalDisplay::focusNextPrevChild( bool next )
 }
 
 
-QChar TerminalDisplay::charClass(QChar qch) const
+QChar TerminalDisplay::charClass(wchar_t ch) const
 {
+    // characters outside the BMP cannot be represented by a single QChar; treat them as word characters
+    if ( uint(ch) > 0xFFFF ) return QLatin1Char('a');
+    const QChar qch{char16_t(ch)};
+
     if ( qch.isSpace() ) return ' ';
 
     if ( qch.isLetterOrNumber() || _wordCharacters.contains(qch, Qt::CaseInsensitive ) )
@@ -2854,7 +2855,7 @@ QVariant TerminalDisplay::inputMethodQuery( Qt::InputMethodQuery query ) const
     const QPoint cursorPos = _screenWindow ? _screenWindow->cursorPosition() : QPoint(0,0);
     switch ( query )
     {
-        case Qt::ImMicroFocus:
+        case Qt::ImCursorRectangle:
                 return imageToWidget(QRect(cursorPos.x(),cursorPos.y(),1,1));
             break;
         case Qt::ImFont:
@@ -3182,7 +3183,7 @@ void TerminalDisplay::doDrag()
   QMimeData *mimeData = new QMimeData;
   mimeData->setText(QApplication::clipboard()->text(QClipboard::Selection));
   dragInfo.dragObject->setMimeData(mimeData);
-  dragInfo.dragObject->start(Qt::CopyAction);
+  dragInfo.dragObject->exec(Qt::CopyAction);
   // Don't delete the QTextDrag object.  Qt will delete it when it's done with it.
 }
 

@@ -31,6 +31,7 @@
 #include <QSettings>
 #include <QDir>
 #include <QRegularExpression>
+#include <QRandomGenerator>
 
 
 // KDE
@@ -179,8 +180,7 @@ ColorEntry ColorScheme::colorEntry(int index , uint randomSeed) const
 {
     Q_ASSERT( index >= 0 && index < TABLE_COLORS );
 
-    if ( randomSeed != 0 )
-        qsrand(randomSeed);
+    QRandomGenerator randomGenerator(randomSeed);
 
     ColorEntry entry = colorTable()[index];
 
@@ -191,9 +191,9 @@ ColorEntry ColorScheme::colorEntry(int index , uint randomSeed) const
         const RandomizationRange& range = _randomTable[index];
 
 
-        int hueDifference = range.hue ? (qrand() % range.hue) - range.hue/2 : 0;
-        int saturationDifference = range.saturation ? (qrand() % range.saturation) - range.saturation/2 : 0;
-        int  valueDifference = range.value ? (qrand() % range.value) - range.value/2 : 0;
+        int hueDifference = range.hue ? (int(randomGenerator.bounded(quint32(range.hue)))) - range.hue/2 : 0;
+        int saturationDifference = range.saturation ? (int(randomGenerator.bounded(quint32(range.saturation)))) - range.saturation/2 : 0;
+        int  valueDifference = range.value ? (int(randomGenerator.bounded(quint32(range.value)))) - range.value/2 : 0;
 
         QColor& color = entry.color;
 
@@ -367,9 +367,9 @@ void ColorScheme::readColorEntry(QSettings * s , int index)
         if (hexColorPattern.match(colorStr).hasMatch())
         {
             // Parsing is always ok as already matched by the regexp
-            r = colorStr.midRef(1, 2).toInt(nullptr, 16);
-            g = colorStr.midRef(3, 2).toInt(nullptr, 16);
-            b = colorStr.midRef(5, 2).toInt(nullptr, 16);
+            r = QStringView(colorStr).mid(1, 2).toInt(nullptr, 16);
+            g = QStringView(colorStr).mid(3, 2).toInt(nullptr, 16);
+            b = QStringView(colorStr).mid(5, 2).toInt(nullptr, 16);
             ok = true;
         }
     }
@@ -502,7 +502,7 @@ ColorScheme* KDE3ColorSchemeReader::read()
 
     ColorScheme* scheme = new ColorScheme();
 
-    QRegExp comment("#.*$");
+    static const QRegularExpression comment(QStringLiteral("#.*$"));
     while ( !_device->atEnd() )
     {
         QString line(_device->readLine());

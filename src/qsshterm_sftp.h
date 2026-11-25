@@ -16,10 +16,9 @@ class QSSHTerm_Sftp_Dialog : public QDialog
     Q_OBJECT
 
 public:
-    QSSHTerm_Sftp_Dialog (QWidget *parent = 0) {
-    	qDebug() << "create diagloue";
+    QSSHTerm_Sftp_Dialog (QWidget *parent = nullptr) : QDialog(parent) {
     	initGui();
-    };
+    }
     ~QSSHTerm_Sftp_Dialog(){};
 
     void setSiteInfo(SiteInfo  info) {
@@ -33,7 +32,7 @@ private :
 	SiteInfo  siteInfo;
     void initGui();
     void initLocalHome();
-    QSSHTerm_Sftp_Session * session;
+    QSSHTerm_Sftp_Session * session = nullptr;
 
 };
 
@@ -51,12 +50,11 @@ struct FileStruct {
 	FileInfo info;
 };
 
-class QSSHTerm_Sftp_Session : QObject
+class QSSHTerm_Sftp_Session : public QObject
 {
 	Q_OBJECT
 public:
 
-	Q_ENUMS(SessionState)
 	enum State
 	{
 	    StateClosed,
@@ -77,13 +75,11 @@ public:
 	    StateOpened,
 	    StateError
 	};
-	QSSHTerm_Sftp_Session(SiteInfo & info, QObject * parent = 0):siteInfo(info) {
-
+	QSSHTerm_Sftp_Session(const SiteInfo & info, QObject * parent = nullptr)
+		: QObject(parent), siteInfo(info) {
 	}
 
-	~QSSHTerm_Sftp_Session(){
-
-	};
+	~QSSHTerm_Sftp_Session() override;
 
 	void process();
 
@@ -115,12 +111,9 @@ public slots:
 	void pwd();
 
 private :
-	ssh_session session;
-	sftp_session sftp;
-	SiteInfo & siteInfo;
-
-	int authenticate_console(ssh_session);
-	void error(ssh_session session);
+	ssh_session session = nullptr;
+	sftp_session sftp = nullptr;
+	SiteInfo siteInfo;   // was a reference to a caller owned (possibly temporary) object
 };
 
 #endif

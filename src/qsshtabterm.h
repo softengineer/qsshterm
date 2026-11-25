@@ -35,12 +35,10 @@ class qsshTabTerm: public QMainWindow {
       void openSession(SiteInfo);
       void openSession(int);
       void tabSelected(int);
-      void changeTabIcon(QString index, SSHTermState state);
-      void tabMoved(int from, int to);
+      void changeTabIcon(QString termKey, SSHTermState state);
 
   private:
       QTabWidget *tabs;
-      QHash<QString, int> termKeyHash;
       QSiteTreeDialog *sessionMgr_dialog;
       QSSHTerm_Sftp_Dialog * sftp_dialog;
       QAction * sftp_mgr;
@@ -51,6 +49,8 @@ class qsshTabTerm: public QMainWindow {
       void showFindDialog();
       void showAboutDialog();
       void on_tab_rightMouse_pressed( int clickedItem, QPoint position );
+      QSSHTerm *termAt(int index) const;
+      int indexOfTerm(const QString &termKey) const;
 
   private slots:
       void closeTab(int);

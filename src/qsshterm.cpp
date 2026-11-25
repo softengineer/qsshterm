@@ -1,42 +1,57 @@
 #include "qsshterm.h"
-#include <unistd.h>
+#include "qssh_helpers.h"
 #include <QFont>
+#include <QFontDatabase>
 
-QSSHTerm::QSSHTerm(SiteInfo info, QWidget *parent)
-    : QTermWidget(0,parent), termKey(QString()), siteInfo(info), sessionState(IDLE)
-{  
+QSSHTerm::QSSHTerm(const SiteInfo &info, QWidget *parent)
+    : QTermWidget(0, parent), siteInfo(info)
+{
   this->setColorScheme("Ubuntu");
   changeFont();
 }
 
+QSSHTerm::~QSSHTerm()
+{
+  if (session) {
+    // The session lives in its own thread: let it shut down there. Waiting
+    // here could block the GUI on a slow connect/disconnect.
+    QObject::disconnect(session, nullptr, this, nullptr);
+    QMetaObject::invokeMethod(session, &QSSHSession::close, Qt::QueuedConnection);
+  }
+}
+
 void QSSHTerm::changeFont() {
   QFont font = QApplication::font();
-  #ifdef Q_WS_MAC
-      font.setFamily("Monaco");
-  #elif defined(Q_WS_QWS)
-      font.setFamily("fixed");
-  #elif defined(Q_WS_WIN)
-      font.setFamily("Courier New");
-      qDebug() << "using window font";
-  #else
-      //font.setFamily("Monospace");
-      font.setFamily("Courier New");
-  #endif
-    font.setPointSize(12);
+#if defined(Q_OS_MACOS)
+  font.setFamily("Monaco");
+#elif defined(Q_OS_WIN)
+  font.setFamily("Courier New");
+#else
+  font.setFamily(QFontDatabase::systemFont(QFontDatabase::FixedFont).family());
+#endif
+  font.setStyleHint(QFont::TypeWriter);
+  font.setPointSize(12);
 
   this->setTerminalFont(font);
-  qDebug() << this->getTerminalFont();
 }
 
-void QSSHTerm::readData(const char * d, int size) {
-    QByteArray data(d, size);
-    emit sendByteArray(data);
+void QSSHTerm::readData(const char *d, int size) {
+    if (sessionState == DISCONNECT) {
+        // the session is gone: Enter reconnects, everything else is dropped
+        if (!reconnectPending && QByteArrayView(d, size).contains('\r')) {
+            reconnectPending = true;
+            emit reconnect();
+        }
+        return;
+    }
+    emit sendByteArray(QByteArray(d, size));
 }
 
-void QSSHTerm::writeData(const char * d, int size) {
+void QSSHTerm::writeData(const QByteArray &data) {
+    // don't let error messages printed after a disconnect turn the tab "busy"
+    if (sessionState != DISCONNECT)
         this->sendChangeIcon();
-        QByteArray data(d, size);
-        this->receivedRemoteData(data);
+    this->receivedRemoteData(data);
 }
 
 void QSSHTerm::sendChangeIcon() {
@@ -44,388 +59,246 @@ void QSSHTerm::sendChangeIcon() {
   emit icon_change(this->termKey, BUSY);
 }
 
-void QSSHTerm::sessionError(int j){
-       qDebug() << "session trigger exception";
-       emit icon_change(this->termKey, DISCONNECT);
-       this->sessionState = DISCONNECT;
+void QSSHTerm::sessionError(int) {
+  reconnectPending = false;
+  this->sessionState = DISCONNECT;
+  emit icon_change(this->termKey, DISCONNECT);
 }
 
+void QSSHTerm::sessionConnected() {
+  reconnectPending = false;
+  this->sessionState = IDLE;
+  emit icon_change(this->termKey, IDLE);
+}
+
+void QSSHTerm::resizeEvent(QResizeEvent *event) {
+  QTermWidget::resizeEvent(event);
+  emit resizeSshWindow(this->screenColumnsCount(), this->screenLinesCount());
+}
 
 void QSSHTerm::start() {
-     session = new QSSHSession(NULL, this);
+    if (session)
+        return;
 
-     //set cursor to blink, default is static cursor
-     this->setBlinkingCursor(true);
-   // connect(tester, SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(atError()));
+    //set cursor to blink, default is static cursor
+    this->setBlinkingCursor(true);
+    this->setTerminalSizeHint(true);
 
-    // Here we start an empty pty.
+    session = new QSSHSession(siteInfo, screenColumnsCount(), screenLinesCount());
+    // no parent: the thread must outlive this widget until the session has closed
     QThread *thread = new QThread();
     session->moveToThread(thread);
-    connect(this, &QSSHTerm::sendData,this, &QSSHTerm::readData);
-   
-    connect(this, &QSSHTerm::sendByteArray,session, &QSSHSession::readByteArray, Qt::QueuedConnection);
 
-    connect(thread, SIGNAL(started()), session, SLOT(process()));
+    connect(this, &QTermWidget::sendData, this, &QSSHTerm::readData);
+    connect(this, &QSSHTerm::sendByteArray, session, &QSSHSession::readByteArray);
 
-    connect(session, SIGNAL(finished()), thread, SLOT(quit()));
-    connect(session, SIGNAL(finished()), session, SLOT(deleteLater()));
-    connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+    connect(thread, &QThread::started, session, &QSSHSession::process);
+    connect(session, &QSSHSession::finished, thread, &QThread::quit);
+    connect(session, &QSSHSession::finished, session, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+
     connect(this, &QSSHTerm::resizeSshWindow, session, &QSSHSession::resizeEvent);
+    connect(this, &QTermWidget::copyAvailable, this, &QSSHTerm::copySelect);
 
-    connect(this, SIGNAL(copyAvailable(bool)), this, SLOT(copySelect( )));
+    connect(this, &QSSHTerm::connect_to, session, &QSSHSession::connect_to);
+    connect(this, &QSSHTerm::reconnect, session, &QSSHSession::reconnect);
+    connect(this, &QSSHTerm::disconnectSession, session, &QSSHSession::disconnect);
+    connect(this, &QSSHTerm::reset, session, &QSSHSession::reset);
 
-    connect(this, SIGNAL(connect_to()), session, SLOT(connect_to()));
-    connect(this, SIGNAL(reconnect()), session, SLOT(reconnect()));
-    connect(this, SIGNAL(disconnect()), session, SLOT(disconnect()));
-    connect(this, SIGNAL(reset()), session, SLOT(reset())); 
-    connect(session, SIGNAL(sessionError(int)), this, SLOT(sessionError(int)), Qt::QueuedConnection);
-   // connect(this, SIGNAL(rightMouseButtonPressed()), this, SLOT(mouseEvent()));
-   
+    connect(session, &QSSHSession::dispatchData, this, &QSSHTerm::writeData);
+    connect(session, &QSSHSession::sessionError, this, &QSSHTerm::sessionError);
+    connect(session, &QSSHSession::sessionConnected, this, &QSSHTerm::sessionConnected);
+
     this->startTerminalTeletype();
     thread->start();
 }
 
-void QSSHTerm::mouseEvent() {
- 
-}
-
-void QSSHTerm::copySelect() 
+void QSSHTerm::copySelect(bool available)
 {
-  copyClipboard();
+  // copy-on-select; copyAvailable(false) is emitted when the selection is cleared
+  if (available)
+    copyClipboard();
 }
 
-QSSHSession::QSSHSession( QObject *parent , QSSHTerm * term)
-    : qterm(term), session(0), channel(0)
+QSSHSession::QSSHSession(const SiteInfo &info, int columns, int lines)
+    : siteInfo(info), columns(columns), lines(lines)
 {
 }
 
-void QSSHSession::resizeEvent(const int width, const int height) {
-    qterm->changeFont();
-    int wwidth = qterm->screenColumnsCount();
-    int wheight = qterm->screenLinesCount();
-    if (width == 1 || height == 1) {
+QSSHSession::~QSSHSession()
+{
+  disconnect();
+}
+
+void QSSHSession::emitText(const QString &text) {
+  emit dispatchData(text.toUtf8());
+}
+
+void QSSHSession::fail(const QString &message) {
+  qDebug() << "ssh session error:" << message;
+  emit sessionError(1);
+  emitText(QStringLiteral("\r\n%1\r\nPress enter to reconnect ...").arg(message));
+  disconnect();
+}
+
+void QSSHSession::resizeEvent(int width, int height) {
+    if (width <= 1 || height <= 1)
       return;
-    }
-    
-    if (this->channel) {
-        ssh_channel_change_pty_size(channel,wwidth, wheight);
-    }
+
+    columns = width;
+    lines = height;
+    if (channel)
+        ssh_channel_change_pty_size(channel, columns, lines);
 }
 
-void QSSHSession::readByteArray(const QByteArray array) {
-  int num = ssh_channel_write(this->channel, array.data(), array.size());
-}
-
-void QSSHSession::error(ssh_session session){
-  fprintf(stderr,"Authentication failed: %s\n",ssh_get_error(session));
+void QSSHSession::readByteArray(const QByteArray &array) {
+  if (channel)
+    ssh_channel_write(channel, array.constData(), array.size());
 }
 
 void QSSHSession::process() {
-  // Read anything from remote terminal via socket and show it on widget.
-  connect(this,&QSSHSession::dispatchData, qterm, &QSSHTerm::writeData, Qt::BlockingQueuedConnection);
   connect_to();
 }
 
-int QSSHSession::authenticate_kbdint(ssh_session session, const char *password) {
-    int err;
+void QSSHSession::select_loop() {
+    if (!channel)
+        return;
 
-    err = ssh_userauth_kbdint(session, NULL, NULL);
-    while (err == SSH_AUTH_INFO) {
-        const char *instruction;
-        const char *name;
-        char buffer[128];
-        int i, n;
-
-        name = ssh_userauth_kbdint_getname(session);
-        instruction = ssh_userauth_kbdint_getinstruction(session);
-        n = ssh_userauth_kbdint_getnprompts(session);
-
-        if (name && strlen(name) > 0) {
-            printf("%s\n", name);
-        }
-
-        if (instruction && strlen(instruction) > 0) {
-            printf("%s\n", instruction);
-        }
-
-        for (i = 0; i < n; i++) {
-            const char *answer;
-            const char *prompt;
-            char echo;
-
-            prompt = ssh_userauth_kbdint_getprompt(session, i, &echo);
-            if (prompt == NULL) {
-                break;
-            }
-
-            if (echo) {
-                char *p;
-
-                printf("%s", prompt);
-
-                if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
-                    return SSH_AUTH_ERROR;
-                }
-
-                buffer[sizeof(buffer) - 1] = '\0';
-                if ((p = strchr(buffer, '\n'))) {
-                    *p = '\0';
-                }
-
-                if (ssh_userauth_kbdint_setanswer(session, i, buffer) < 0) {
-                    return SSH_AUTH_ERROR;
-                }
-
-                memset(buffer, 0, strlen(buffer));
-            } else {
-                if (password && strstr(prompt, "Password:")) {
-                    answer = password;
-                } else {
-                    buffer[0] = '\0';
-
-                    if (ssh_getpass(prompt, buffer, sizeof(buffer), 0, 0) < 0) {
-                        return SSH_AUTH_ERROR;
-                    }
-                    answer = buffer;
-                }
-                err = ssh_userauth_kbdint_setanswer(session, i, answer);
-                memset(buffer, 0, sizeof(buffer));
-                if (err < 0) {
-                    return SSH_AUTH_ERROR;
-                }
-            }
-        }
-        err=ssh_userauth_kbdint(session,NULL,NULL);
-    }
-
-    return err;
-}
-
-int QSSHSession::authenticate_console(ssh_session session){
-  int rc;
-  int method;
-  char password[128] = {0};
-  char *banner;
-
-  // Try to authenticate
-  rc = ssh_userauth_none(session, NULL);
-  if (rc == SSH_AUTH_ERROR) {
-    error(session);
-    return rc;
-  }
-
-  method = ssh_userauth_list(session, NULL);
-  qDebug() << "debug method" << method;
-  while (rc != SSH_AUTH_SUCCESS) {
-    if (method & SSH_AUTH_METHOD_GSSAPI_MIC){
-        rc = ssh_userauth_gssapi(session);
-        if(rc == SSH_AUTH_ERROR) {
-            error(session);
-            return rc;
-        } else if (rc == SSH_AUTH_SUCCESS) {
-            break;
-        }
-    }
-    // Try to authenticate with public key first
-    if (!qterm->siteInfo.privateKeyPath.isNull()) {
-      if (method & SSH_AUTH_METHOD_PUBLICKEY) {
-        ssh_key privkey;
-        if(ssh_pki_import_privkey_file(qterm->siteInfo.privateKeyPath.toLatin1().data(),NULL,
-                                             NULL,NULL,&privkey) == SSH_OK)
-        {
-            rc = ssh_userauth_publickey(session, NULL, privkey);
-        }
-        ssh_key_free(privkey);
-        //rc = ssh_userauth_publickey_auto(session, NULL, NULL);
-        if (rc == SSH_AUTH_ERROR) {
-            error(session);
-            return rc;
-        } else if (rc == SSH_AUTH_SUCCESS) {
-          break;
-        }
-      }
-    }
-    // Try to authenticate with keyboard interactive";
-    if (method & SSH_AUTH_METHOD_INTERACTIVE) {
-      rc = authenticate_kbdint(session, NULL);
-      if (rc == SSH_AUTH_ERROR) {
-        error(session);
-        return rc;
-      } else if (rc == SSH_AUTH_SUCCESS) {
-        break;
-      }
-    }
-
-    char *passwd = "Password: \r\n";
-    emit dispatchData(passwd, strlen(passwd));
-
-    // Try to authenticate with password
-    if (method & SSH_AUTH_METHOD_PASSWORD) {
-      if (!qterm->siteInfo.password.isNull()) {
-
-        rc = ssh_userauth_password(session, NULL, qterm->siteInfo.password.toLatin1().data());
-      }
-      if (rc == SSH_AUTH_ERROR) {
-        error(session);
-        return rc;
-      } else if (rc == SSH_AUTH_SUCCESS) {
-        break;
-      }
-    }
-    memset(password, 0, sizeof(password));
-  }
-
-  banner = ssh_get_issue_banner(session);
-  if (banner) {
-    emit dispatchData(banner, strlen(banner));
-    ssh_string_free_char(banner);
-  }
-
-  return rc;
-}
-
-void QSSHSession::log(QString msg) {
-     std::ofstream fout("/home/davidfan/Work/sshterminal/qlibssh/log.txt", std::ofstream::out | std::ofstream::app);
-     fout << msg.toLatin1().data() << "\n";
-     fout << flush;
-     fout.close();
-}
-
-int QSSHSession::select_loop(){
     int nbytes = 0;
     do {
       nbytes = ssh_channel_read_nonblocking(channel, buffer, sizeof(buffer), 0);
-      if (nbytes < 0) return SSH_ERROR;
-      if (nbytes > 0) {
-          emit dispatchData(buffer, nbytes);
-          QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-      }
-      
-    } while(nbytes > 0);
+      if (nbytes > 0)
+          emit dispatchData(QByteArray(buffer, nbytes));
+    } while (nbytes > 0);
+
+    if (nbytes == SSH_ERROR)
+        sshStateCheck();
 }
 
 void QSSHSession::sshStateCheck() {
-  
-  bool iseof = ssh_channel_is_eof(channel);
+  if (!session || !channel)
+    return;
+
   int status = ssh_get_status(session);
-  if (status == SSH_WRITE_PENDING) {
-      // this is not an error, just ignore it
-      status = 0;
-  }
-  if (status != 0 || iseof) {
-     qDebug() << "There is network issue" ;
-    emit sessionError(1);
-    timer->stop();
-    char * msg = "\r\nSSH Session is broken, press enter to restart ...";
-    emit dispatchData(msg, strlen(msg));
+  // SSH_WRITE_PENDING is not an error, just ignore it
+  status &= ~SSH_WRITE_PENDING;
+  if (status != 0 || ssh_channel_is_eof(channel) || ssh_channel_is_closed(channel)) {
+    qDebug() << "There is network issue";
+    fail(QStringLiteral("SSH Session is broken."));
   }
 }
 
-void QSSHSession::shell(ssh_session session){
-    this->channel = ssh_channel_new(session);
-    ssh_channel_accept_x11(channel, 10);
-    if(ssh_channel_open_session(channel)){
-        printf("error opening channel : %s\n",ssh_get_error(session));
-        return;
-    }
-  
-    ssh_channel_request_pty(channel);
-    if(ssh_channel_request_shell(channel)){
-        printf("Requesting shell : %s\n",ssh_get_error(session));
-        return;
-    }
-    qterm->setTerminalSizeHint(true);
-    int width = qterm->screenColumnsCount();
-    int height = qterm->screenLinesCount();
-    qDebug() << "open session :"<<width <<"," << height;
-    ssh_channel_change_pty_size(channel,width, height);
+bool QSSHSession::shell() {
+    channel = ssh_channel_new(session);
+    if (!channel)
+        return false;
 
-    socket_t socket = ssh_get_fd(session);
-    //qDebug() << LIBSSH_DAVIDFAN;
-   
-    read_notifier = new QSocketNotifier(socket,
-                                         QSocketNotifier::Read,
-                                         this);
+    if (ssh_channel_open_session(channel) != SSH_OK)
+        return false;
+
+    if (ssh_channel_request_pty_size(channel, "xterm", columns, lines) != SSH_OK)
+        return false;
+
+    if (ssh_channel_request_shell(channel) != SSH_OK)
+        return false;
+
+    read_notifier = new QSocketNotifier(ssh_get_fd(session), QSocketNotifier::Read, this);
+    // Qt6 changed activated(int) to activated(QSocketDescriptor, Type); the old
+    // string based SIGNAL(activated(int)) connection silently failed.
+    connect(read_notifier, &QSocketNotifier::activated, this, &QSSHSession::select_loop);
     read_notifier->setEnabled(true);
-    connect(read_notifier, SIGNAL(activated(int)),
-            this, SLOT(select_loop()));
-
-    // error_notifier = new QSocketNotifier(socket,
-    //                                      QSocketNotifier::Exception,
-    //                                      this);
-   
-    // connect(error_notifier, SIGNAL(activated(int)),
-    //         this, SLOT(networkError(int )));
-    // error_notifier->setEnabled(true);
 
     timer = new QTimer(this);
     timer->setSingleShot(false);
     timer->setInterval(1000);
-    connect(timer, SIGNAL(timeout()), this, SLOT(sshStateCheck()));
+    connect(timer, &QTimer::timeout, this, &QSSHSession::sshStateCheck);
     timer->start();
+
+    // pick up anything that arrived before the notifier existed
+    select_loop();
+    return true;
 }
 
-
 void QSSHSession::reconnect() {
-   disconnect();
    connect_to();
 }
 
 void QSSHSession::disconnect() {
-    if (read_notifier)
+    // may run from a slot of the notifier/timer itself: never delete them directly
+    if (read_notifier) {
       read_notifier->setEnabled(false);
-    if (timer)
+      read_notifier->deleteLater();
+      read_notifier = nullptr;
+    }
+    if (timer) {
       timer->stop();
-    if (channel)
+      timer->deleteLater();
+      timer = nullptr;
+    }
+    if (channel) {
+      ssh_channel_close(channel);
       ssh_channel_free(channel);
+      channel = nullptr;
+    }
     if (session) {
       ssh_disconnect(session);
       ssh_free(session);
+      session = nullptr;
+      qDebug() << "SSH session is closed";
     }
-    //ssh_finalize();
-    qDebug() << "SSH session is closing ...";
 }
 
 void QSSHSession::reset() {
     reconnect();
 }
 
+void QSSHSession::close() {
+    disconnect();
+    emit finished();
+}
 
 void QSSHSession::connect_to() {
-	qDebug() << "ssh is initializing";
-    ssh_threads_set_callbacks(ssh_threads_get_pthread());
-    ssh_init();
-    char * msg = "Connecting to host ...\r\n";
-    emit dispatchData(msg, strlen(msg));
+    disconnect();
+
+    emitText(QStringLiteral("Connecting to host ...\r\n"));
     session = ssh_new();
-    int verbosity = 1;
-    if (!qterm->siteInfo.username.isNull())
-      ssh_options_set(session, SSH_OPTIONS_USER, qterm->siteInfo.username.toLatin1().data());
-
-    ssh_options_set(session, SSH_OPTIONS_HOST, qterm->siteInfo.hostname.toLatin1().data());
-    ssh_options_set(session, SSH_OPTIONS_PORT, &qterm->siteInfo.port);
-    ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
-    int rc = ssh_connect(session);
-
-    if (rc != SSH_OK) {
-        qDebug() << "Connection to host failed!";
-        char * msg = "\r\nFail to connect to server, press enter to restart ...";
-        emit dispatchData(msg, strlen(msg));
-        emit sessionError(1);
+    if (!session) {
+        fail(QStringLiteral("Unable to create an SSH session."));
         return;
     }
 
-    int known = ssh_is_server_known(session);
-    int state= 0; //verify_knownhost(session);
-    if (state != 0)
-       return ;
+    int verbosity = SSH_LOG_WARNING;
+    qssh::applySiteOptions(session, siteInfo);
+    ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
 
-    char * banner=ssh_get_issue_banner(session);
-    if(banner) {
-         qDebug()<<banner;
-         free(banner);
+    if (ssh_connect(session) != SSH_OK) {
+        fail(QStringLiteral("Fail to connect to server: %1").arg(QString::fromUtf8(ssh_get_error(session))));
+        return;
     }
 
-    authenticate_console(session);
-    shell(session);
+    QString hostMessage;
+    if (!qssh::verifyKnownHost(session, &hostMessage)) {
+        fail(hostMessage);
+        return;
     }
+    if (!hostMessage.isEmpty())
+        emitText(hostMessage + QStringLiteral("\r\n"));
+
+    if (qssh::authenticate(session, siteInfo) != SSH_AUTH_SUCCESS) {
+        fail(QStringLiteral("Authentication failed: %1").arg(QString::fromUtf8(ssh_get_error(session))));
+        return;
+    }
+
+    char *banner = ssh_get_issue_banner(session);
+    if (banner) {
+        emitText(QString::fromUtf8(banner));
+        ssh_string_free_char(banner);
+    }
+
+    if (!shell()) {
+        fail(QStringLiteral("Unable to open a shell: %1").arg(QString::fromUtf8(ssh_get_error(session))));
+        return;
+    }
+
+    emit sessionConnected();
+}

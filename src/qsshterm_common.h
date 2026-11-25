@@ -1,6 +1,9 @@
 #ifndef SSHTERM_COMMON_H
 #define SSHTERM_COMMON_H
 
+#include <QString>
+#include <QMetaType>
+
 struct SiteInfo {
     QString sitename;
     QString hostname;
@@ -22,7 +25,7 @@ struct SiteInfo {
     }
 };
 
-Q_DECLARE_METATYPE(SiteInfo);
+Q_DECLARE_METATYPE(SiteInfo)
 
 
 enum SSHTermState
@@ -32,9 +35,6 @@ enum SSHTermState
     BUSY
 };
 
-Q_ENUMS(SSHTermState);
-
-
 struct TreeNode {
     bool isFolder;
     SiteInfo  siteInfo;
@@ -43,6 +43,6 @@ struct TreeNode {
     }
 };
 
-Q_DECLARE_METATYPE(TreeNode);
+Q_DECLARE_METATYPE(TreeNode)
 
 #endif
