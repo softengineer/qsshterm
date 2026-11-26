@@ -21,7 +21,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The bundled qtermwidget's Windows POSIX shims target MinGW, so build
       # everything with the MSYS2 UCRT64 toolchain.
@@ -34,6 +34,7 @@ jobs:
             toolchain:p
             cmake:p
             ninja:p
+            make:p
             qt6-base:p
             qt6-svg:p
             qt6-tools:p
@@ -52,7 +53,8 @@ jobs:
           mkdir build-app && cd build-app
           "$QMAKE" ../qsshterm.pro CONFIG+=release \
                    "INCLUDEPATH+=$PWD/../deps/include" "LIBS+=-L$PWD/../deps/lib"
-          mingw32-make -j"$(nproc)"
+          MAKE=$(command -v mingw32-make || command -v make)
+          "$MAKE" -j"$(nproc)"
 
       - name: Package
         run: |
@@ -88,9 +90,9 @@ jobs:
           path: QSSHTerm-windows-x64.zip
 
   macos:
-    runs-on: macos-14   # Apple Silicon (arm64)
+    runs-on: macos-latest   # Apple Silicon (arm64)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: brew install qt libssh ninja
