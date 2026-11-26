@@ -634,6 +634,10 @@ void qsshTabTerm::openSession(SiteInfo info) {
     term->setTabTermKey(labelTitle);
     // connect before start() so no state change is missed
     connect(term, &QSSHTerm::icon_change, this, &qsshTabTerm::changeTabIcon);
+    connect(term, &QSSHTerm::savePasswordRequested, this, [this](const QString &site, const QString &password) {
+        if (!SiteTree::storePassword(site, password))
+            QMessageBox::warning(this, tr("Save Password"), tr("Cannot save the password of %1.").arg(site));
+    });
     connect(term, &QSSHTerm::statusChanged, this, [this, term]() {
         changeTabIcon(term->getTermKey(), term->state());
         if (term == currentTerm())

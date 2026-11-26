@@ -35,6 +35,10 @@ SOURCES += \
     src/qsshterm.cpp \
     src/qsiteconfig.cpp \
     src/qssh_helpers.cpp \
+    src/qssh_prompt.cpp \
+    src/qssh_proxy.cpp \
+    src/qssh_forward.cpp \
+    src/qsite_editor.cpp \
     src/qssh_theme.cpp \
     src/qsshterm_sftp.cpp
     
@@ -44,6 +48,10 @@ HEADERS += \
     src/qsiteconfig.h \
     src/qssh_utils.h \
     src/qssh_helpers.h \
+    src/qssh_prompt.h \
+    src/qssh_proxy.h \
+    src/qssh_forward.h \
+    src/qsite_editor.h \
     src/qssh_icons.h \
     src/qssh_theme.h \
     src/qsshterm_sftp.h
@@ -51,6 +59,7 @@ HEADERS += \
 # libssh >= 0.8 has thread support built in; libssh_threads no longer exists
 LIBS += -lqtermwidget6
 LIBS += -lssh
+win32: LIBS += -lws2_32
 
 release: DESTDIR = ./
          TEMPDIR = build/release

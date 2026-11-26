@@ -35,6 +35,10 @@ public:
     SiteInfo selectedSite() const;
     /** Saved session named @p name (case insensitive), if any. */
     bool findSite(const QString &name, SiteInfo *info) const;
+    /** Fills info.jumpChain from info.jumpHosts (saved session names or [user@]host[:port]). */
+    static void resolveJumpHosts(SiteInfo &info);
+    /** Saves @p password into the saved session @p siteName. */
+    static bool storePassword(const QString &siteName, const QString &password);
 
     // shared by the context menu, the manager toolbar and the shortcuts
     QAction *actConnect;
