@@ -8,7 +8,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui network xml widgets
+QT       += core gui network xml widgets svg
 
 lessThan(QT_MAJOR_VERSION, 6): error("QSSHTerm requires Qt 6")
 
@@ -35,6 +35,7 @@ SOURCES += \
     src/qsshterm.cpp \
     src/qsiteconfig.cpp \
     src/qssh_helpers.cpp \
+    src/qssh_theme.cpp \
     src/qsshterm_sftp.cpp
     
 HEADERS += \
@@ -43,6 +44,8 @@ HEADERS += \
     src/qsiteconfig.h \
     src/qssh_utils.h \
     src/qssh_helpers.h \
+    src/qssh_icons.h \
+    src/qssh_theme.h \
     src/qsshterm_sftp.h
 
 # libssh >= 0.8 has thread support built in; libssh_threads no longer exists
@@ -57,6 +60,9 @@ OBJECTS_DIR = $$TEMPDIR/.obj
 MOC_DIR = $$TEMPDIR/.moc
 RCC_DIR = $$TEMPDIR/.qrc
 UI_DIR = $$TEMPDIR/.ui
+
+# icons and bundled icon themes are compiled in: no files needed next to the binary
+RESOURCES += qsshterm.qrc
 
 win32:RC_ICONS += icon/qsshterm.ico
 

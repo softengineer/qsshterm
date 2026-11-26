@@ -66,7 +66,16 @@ In Linux (Qt 6.5+, libssh 0.9+):
 Host keys are checked against ~/.ssh/known_hosts: unknown hosts are added on
 first connect, and connections to hosts whose key has changed are refused.
 
-In Windows:
+Prebuilt packages: every push to master builds Windows (x64) and macOS
+(Apple Silicon) packages with GitHub Actions (`.github/workflows/build.yml`);
+download them from the run's Artifacts. Pushing a `v*` tag attaches them to a
+GitHub release. The macOS app is unsigned: right-click > Open the first time.
+
+Icons and the built-in icon themes (a Breeze subset, see `icons/README.md`)
+are compiled into the executable, so the program no longer depends on the
+working directory.
+
+In Windows (the CI recipe uses MSYS2 UCRT64; see the workflow for exact steps):
 1. Install Qt 6 (6.5 or newer) with mingw
 2. Install openssl
 3. Install CMake

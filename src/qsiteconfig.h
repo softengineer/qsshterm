@@ -1,78 +1,124 @@
 #ifndef SITETREE_H
 #define SITETREE_H
 
-#include <QMainWindow>
 #include <QDomDocument>
 #include <QIcon>
 #include <QTreeWidget>
 #include <QDialog>
-#include <QFile>
 #include <QVariant>
 #include "qsshterm_common.h"
 
-class QToolBar;
+class QAction;
+class QLineEdit;
+class QCheckBox;
 
+/**
+ * Tree of saved sessions (~/.qsshterm/sites.xml). All trees share one
+ * document; any change is saved and every open tree is rebuilt, so the
+ * docked manager and the Connect dialog always agree.
+ */
 class SiteTree : public QTreeWidget
 {
     Q_OBJECT
 
 public:
-    SiteTree(QWidget *parent = 0);
+    explicit SiteTree(QWidget *parent = nullptr);
+    ~SiteTree() override;
 
     static QString sitesFilePath();
-    bool load();
-    bool save() const;
+    /** Modal editor for one site's connection settings. */
+    static bool editSiteInfo(QWidget *parent, const QString &title, SiteInfo &info);
 
-protected:
-#if !defined(QT_NO_CONTEXTMENU) && !defined(QT_NO_CLIPBOARD)
-    void contextMenuEvent(QContextMenuEvent *event) override;
-#endif
+    /** Adds a site to the selected folder (or the top level) and saves. */
+    void addSite(const SiteInfo &info);
+    bool hasSiteSelected() const;
+    SiteInfo selectedSite() const;
+    /** Saved session named @p name (case insensitive), if any. */
+    bool findSite(const QString &name, SiteInfo *info) const;
+
+    // shared by the context menu, the manager toolbar and the shortcuts
+    QAction *actConnect;
+    QAction *actNewSession;
+    QAction *actNewFolder;
+    QAction *actCut;
+    QAction *actCopy;
+    QAction *actPaste;
+    QAction *actDelete;
+    QAction *actRename;
+    QAction *actProperties;
+
+signals:
+    void connectRequested(SiteInfo info);
 
 public slots:
+    void connectSelected();
     void newSession();
     void newFolder();
-    void editSession();
-    void deleteSession();
+    void cut();
+    void copy();
+    void paste();
+    void deleteSelected();
+    void renameSelected();
+    void properties();
+    void setFilter(const QString &text);
 
-private slots:
-    void updateDomElement(const QTreeWidgetItem *item, int column);
-    void Ondoubleclicktree(QTreeWidgetItem *item, int column);
+protected:
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
-    QTreeWidgetItem * parseFolderElement(const QDomElement &element,
-                            QTreeWidgetItem *parentItem = 0);
-    void parseNode(const QDomNode &node, 
-             QTreeWidgetItem *parentItem = 0);
-    void parseSite(const QDomNode &element,
-                                  QTreeWidgetItem *parentItem = 0);
+    void rebuild();
+    void updateActions();
+    bool applyFilter(QTreeWidgetItem *item, bool ancestorMatches);
+    void parseNode(const QDomElement &element, QTreeWidgetItem *parentItem);
+    QTreeWidgetItem *addFolderItem(const QDomElement &element, QTreeWidgetItem *parentItem);
+    QTreeWidgetItem *addSiteItem(const QDomElement &element, QTreeWidgetItem *parentItem);
     QTreeWidgetItem *targetFolderItem() const;
-    QDomElement folderElementFor(QTreeWidgetItem *folderItem);
-    void saveOrWarn();
-    QTreeWidgetItem *createItem(const QDomElement &element,
-                                QTreeWidgetItem *parentItem = 0);
+    QTreeWidgetItem *itemForElement(const QDomElement &element) const;
+    void commit(const QDomElement &select = QDomElement());
 
-    QDomDocument domDocument;
-    QIcon folderIcon;
-    QIcon bookmarkIcon;
-
-    QFile xmlfile;
+    QTreeWidgetItem *rootItem = nullptr;
+    QString filterText;
 };
 
+/**
+ * Session manager panel: toolbar, filter box and the session tree.
+ * Used both in the main window's dock and in the Connect dialog.
+ */
+class QSessionManagerWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit QSessionManagerWidget(QWidget *parent = nullptr);
+    SiteTree *tree() const { return siteTree; }
+    void focusFilter();
+
+signals:
+    void connectRequested(SiteInfo info);
+
+private:
+    SiteTree *siteTree;
+    QLineEdit *filter;
+};
+
+/** SecureCRT style "Connect" dialog. */
 class QSiteTreeDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    QSiteTreeDialog(QWidget *parent = 0);
-    ~QSiteTreeDialog(){};
+    explicit QSiteTreeDialog(QWidget *parent = nullptr);
+    SiteTree *tree() const { return manager->tree(); }
 
-    signals:
+signals:
     void notifyNewSession(SiteInfo);
 
-private :
-    void initToolbar();
-    QToolBar * toolbar;
-    SiteTree * tree;
+protected:
+    void showEvent(QShowEvent *event) override;
+
+private:
+    QSessionManagerWidget *manager;
+    QCheckBox *showOnStartup;
 };
 
 #endif

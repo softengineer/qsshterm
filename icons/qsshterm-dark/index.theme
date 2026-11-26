@@ -1,0 +1,10 @@
+[Icon Theme]
+Name=QSSHTerm Dark
+Comment=Subset of KDE Breeze icons bundled with QSSHTerm
+Directories=scalable
+
+[scalable]
+Size=22
+MinSize=8
+MaxSize=256
+Type=Scalable

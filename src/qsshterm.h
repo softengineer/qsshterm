@@ -36,6 +36,10 @@ public:
     void setState(SSHTermState state) {
         this->sessionState = state;
     }
+    bool isConnected() const { return connected; }
+    /** e.g. "ssh2: aes256-gcm@openssh.com", empty while not connected */
+    const QString &connectionInfo() const { return cipherInfo; }
+
     SiteInfo siteInfo;
 
 public slots:
@@ -58,6 +62,8 @@ signals:
     void reset();
     void sendByteArray(const QByteArray &array);
     void resizeSshWindow(int columns, int lines);
+    /** connected / disconnected / cipher changed */
+    void statusChanged();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -67,6 +73,8 @@ private:
     QString termKey;
     SSHTermState sessionState = IDLE;
     bool reconnectPending = false;
+    bool connected = false;
+    QString cipherInfo;
     void sendChangeIcon();
 
 private slots:
@@ -105,6 +113,7 @@ signals:
     void dispatchData(const QByteArray &data);
     void sessionError(int);
     void sessionConnected();
+    void sessionInfo(QString info);
 
 private slots:
     void select_loop();
