@@ -2,6 +2,7 @@
 
 #include "qsiteconfig.h"
 #include "qssh_icons.h"
+#include "qsite_editor.h"
 
 enum { DomElementRole = Qt::UserRole + 1, DomNodeRole = Qt::UserRole + 2 };
 
@@ -17,6 +18,43 @@ static inline QString nameAttribute() { return QStringLiteral("name"); }
 static inline QString ipAttribute() { return QStringLiteral("ip"); }
 static inline QString portAttribute() { return QStringLiteral("port"); }
 static inline QString fileAttribute() { return QStringLiteral("file"); }
+
+// Option groups below <site>; anything else inside a site is kept untouched.
+static const QStringList &managedElements()
+{
+    static const QStringList names = {"host", "username", "privatekey", "password", "connection",
+                                      "proxy", "auth", "forwarding", "terminal", "advanced"};
+    return names;
+}
+
+static int intAttr(const QDomElement &e, const QString &name, int fallback)
+{
+    bool ok = false;
+    const int v = e.attribute(name).toInt(&ok);
+    return ok ? v : fallback;
+}
+
+static bool boolAttr(const QDomElement &e, const QString &name, bool fallback)
+{
+    if (!e.hasAttribute(name))
+        return fallback;
+    const QString v = e.attribute(name);
+    return v == QLatin1String("1") || v.compare(QLatin1String("true"), Qt::CaseInsensitive) == 0;
+}
+
+static const char *const proxyNames[] = {"none", "socks5", "socks4", "http", "command"};
+static const char *const familyNames[] = {"any", "ipv4", "ipv6"};
+static const char *const hostKeyNames[] = {"ask", "accept-new", "strict", "off"};
+static const char *const forwardNames[] = {"local", "remote", "dynamic"};
+
+template <size_t N>
+static int indexOf(const char *const (&names)[N], const QString &value, int fallback)
+{
+    for (size_t i = 0; i < N; ++i)
+        if (value == QLatin1String(names[i]))
+            return int(i);
+    return fallback;
+}
 
 static SiteInfo siteInfoFromElement(const QDomElement &element)
 {
@@ -34,21 +72,119 @@ static SiteInfo siteInfoFromElement(const QDomElement &element)
             info.username = elm.text();
         } else if (tagName == privateElement()) {
             info.privateKeyPath = elm.attribute(fileAttribute());
+            info.certificatePath = elm.attribute("certificate");
         } else if (tagName == "password") {
             info.password = elm.text();
+        } else if (tagName == "connection") {
+            info.jumpHosts = elm.attribute("jump");
+            info.connectTimeout = intAttr(elm, "timeout", 0);
+            info.keepAliveInterval = intAttr(elm, "keepalive", 0);
+            info.addressFamily = indexOf(familyNames, elm.attribute("family"), SiteInfo::AnyFamily);
+            info.bindAddress = elm.attribute("bind");
+            info.useSshConfig = boolAttr(elm, "sshconfig", true);
+            info.sftpStartDir = elm.attribute("sftpdir");
+        } else if (tagName == "proxy") {
+            info.proxyType = indexOf(proxyNames, elm.attribute("type"), SiteInfo::NoProxy);
+            info.proxyHost = elm.attribute("host");
+            info.proxyPort = intAttr(elm, "port", 0);
+            info.proxyUser = elm.attribute("user");
+            info.proxyPassword = elm.attribute("password");
+            info.proxyCommand = elm.attribute("command");
+        } else if (tagName == "auth") {
+            info.authPublicKey = boolAttr(elm, "publickey", true);
+            info.authAgent = boolAttr(elm, "agent", true);
+            info.authPassword = boolAttr(elm, "password", true);
+            info.authKeyboardInteractive = boolAttr(elm, "keyboard-interactive", true);
+            info.authGssapi = boolAttr(elm, "gssapi", true);
+            info.gssapiDelegate = boolAttr(elm, "gssapi-delegate", false);
+            info.agentSocket = elm.attribute("agent-socket");
+        } else if (tagName == "forwarding") {
+            info.transferX11 = boolAttr(elm, "x11", false);
+            info.forwardAgent = boolAttr(elm, "agent", false);
+            for (QDomElement f = elm.firstChildElement("forward"); !f.isNull(); f = f.nextSiblingElement("forward")) {
+                PortForward fw;
+                fw.type = PortForward::Type(indexOf(forwardNames, f.attribute("type"), PortForward::Local));
+                fw.bindAddress = f.attribute("bind");
+                fw.bindPort = intAttr(f, "port", 0);
+                fw.destHost = f.attribute("host");
+                fw.destPort = intAttr(f, "hostport", 0);
+                info.forwards << fw;
+            }
+        } else if (tagName == "terminal") {
+            info.termType = elm.attribute("type");
+            info.encoding = elm.attribute("encoding");
+            info.colorScheme = elm.attribute("colors");
+            info.fontFamily = elm.attribute("font");
+            info.fontSize = intAttr(elm, "fontsize", 0);
+            info.scrollback = intAttr(elm, "scrollback", -2);
+            info.keyboardLayout = elm.attribute("keyboard");
+            info.remoteCommand = elm.attribute("command");
+            info.startupCommands = elm.firstChildElement("startup").text();
+            for (QDomElement e = elm.firstChildElement("env"); !e.isNull(); e = e.nextSiblingElement("env"))
+                info.environment << qMakePair(e.attribute("name"), e.text());
+        } else if (tagName == "advanced") {
+            info.compression = intAttr(elm, "compression", -1);
+            info.ciphers = elm.attribute("ciphers");
+            info.kexAlgorithms = elm.attribute("kex");
+            info.macs = elm.attribute("macs");
+            info.hostKeyAlgorithms = elm.attribute("hostkeys");
+            info.pubkeyAcceptedTypes = elm.attribute("pubkeytypes");
+            info.hostKeyCheck = indexOf(hostKeyNames, elm.attribute("hostkeycheck"), SiteInfo::HostKeyAsk);
+            info.knownHostsFile = elm.attribute("knownhosts");
+            info.logLevel = intAttr(elm, "loglevel", 1);
         }
     }
     return info;
 }
 
+namespace {
+// Collects attributes that differ from the defaults; the element is only
+// written when it has any, so plain sessions stay as short as before.
+struct Group {
+    QDomElement element;
+    bool used = false;
+    Group(QDomDocument &doc, const QString &tag) : element(doc.createElement(tag)) {}
+    void text(const char *name, const QString &value)
+    {
+        if (!value.isEmpty()) {
+            element.setAttribute(name, value);
+            used = true;
+        }
+    }
+    void number(const char *name, int value, int fallback)
+    {
+        if (value != fallback) {
+            element.setAttribute(name, value);
+            used = true;
+        }
+    }
+    void flag(const char *name, bool value, bool fallback)
+    {
+        if (value != fallback) {
+            element.setAttribute(name, value ? 1 : 0);
+            used = true;
+        }
+    }
+    void child(const QDomElement &e)
+    {
+        element.appendChild(e);
+        used = true;
+    }
+    void addTo(QDomElement &parent) const
+    {
+        if (used)
+            parent.appendChild(element);
+    }
+};
+} // namespace
+
 static void writeSiteElement(QDomDocument &doc, QDomElement &element, const SiteInfo &info)
 {
     element.setAttribute(nameAttribute(), info.sitename);
     // drop the old connection settings, keep anything else untouched
-    const QStringList managed = { hostElement(), userElement(), privateElement(), "password" };
     for (QDomElement elm = element.firstChildElement(); !elm.isNull();) {
         QDomElement next = elm.nextSiblingElement();
-        if (managed.contains(elm.tagName()))
+        if (managedElements().contains(elm.tagName()))
             element.removeChild(elm);
         elm = next;
     }
@@ -68,71 +204,106 @@ static void writeSiteElement(QDomDocument &doc, QDomElement &element, const Site
         pass.appendChild(doc.createTextNode(info.password));
         element.appendChild(pass);
     }
-    if (!info.privateKeyPath.isEmpty()) {
+    if (!info.privateKeyPath.isEmpty() || !info.certificatePath.isEmpty()) {
         QDomElement key = doc.createElement(privateElement());
         key.setAttribute(fileAttribute(), info.privateKeyPath);
+        if (!info.certificatePath.isEmpty())
+            key.setAttribute("certificate", info.certificatePath);
         element.appendChild(key);
     }
+
+    Group connection(doc, "connection");
+    connection.text("jump", info.jumpHosts.trimmed());
+    connection.number("timeout", info.connectTimeout, 0);
+    connection.number("keepalive", info.keepAliveInterval, 0);
+    if (info.addressFamily != SiteInfo::AnyFamily)
+        connection.text("family", familyNames[info.addressFamily]);
+    connection.text("bind", info.bindAddress);
+    connection.flag("sshconfig", info.useSshConfig, true);
+    connection.text("sftpdir", info.sftpStartDir);
+    connection.addTo(element);
+
+    if (info.proxyType != SiteInfo::NoProxy) {
+        Group proxy(doc, "proxy");
+        proxy.text("type", proxyNames[info.proxyType]);
+        proxy.text("host", info.proxyHost);
+        proxy.number("port", info.proxyPort, 0);
+        proxy.text("user", info.proxyUser);
+        proxy.text("password", info.proxyPassword);
+        proxy.text("command", info.proxyCommand);
+        proxy.addTo(element);
+    }
+
+    Group auth(doc, "auth");
+    auth.flag("publickey", info.authPublicKey, true);
+    auth.flag("agent", info.authAgent, true);
+    auth.flag("password", info.authPassword, true);
+    auth.flag("keyboard-interactive", info.authKeyboardInteractive, true);
+    auth.flag("gssapi", info.authGssapi, true);
+    auth.flag("gssapi-delegate", info.gssapiDelegate, false);
+    auth.text("agent-socket", info.agentSocket);
+    auth.addTo(element);
+
+    Group forwarding(doc, "forwarding");
+    forwarding.flag("x11", info.transferX11, false);
+    forwarding.flag("agent", info.forwardAgent, false);
+    for (const PortForward &f : info.forwards) {
+        QDomElement fw = doc.createElement("forward");
+        fw.setAttribute("type", forwardNames[f.type]);
+        if (!f.bindAddress.isEmpty())
+            fw.setAttribute("bind", f.bindAddress);
+        fw.setAttribute("port", f.bindPort);
+        if (f.type != PortForward::Dynamic) {
+            fw.setAttribute("host", f.destHost);
+            fw.setAttribute("hostport", f.destPort);
+        }
+        forwarding.child(fw);
+    }
+    forwarding.addTo(element);
+
+    Group terminal(doc, "terminal");
+    terminal.text("type", info.termType);
+    terminal.text("encoding", info.encoding);
+    terminal.text("colors", info.colorScheme);
+    terminal.text("font", info.fontFamily);
+    terminal.number("fontsize", info.fontSize, 0);
+    terminal.number("scrollback", info.scrollback, -2);
+    terminal.text("keyboard", info.keyboardLayout);
+    terminal.text("command", info.remoteCommand);
+    if (!info.startupCommands.trimmed().isEmpty()) {
+        QDomElement startup = doc.createElement("startup");
+        startup.appendChild(doc.createTextNode(info.startupCommands));
+        terminal.child(startup);
+    }
+    for (const auto &var : info.environment) {
+        QDomElement env = doc.createElement("env");
+        env.setAttribute("name", var.first);
+        env.appendChild(doc.createTextNode(var.second));
+        terminal.child(env);
+    }
+    terminal.addTo(element);
+
+    Group advanced(doc, "advanced");
+    advanced.number("compression", info.compression, -1);
+    advanced.text("ciphers", info.ciphers);
+    advanced.text("kex", info.kexAlgorithms);
+    advanced.text("macs", info.macs);
+    advanced.text("hostkeys", info.hostKeyAlgorithms);
+    advanced.text("pubkeytypes", info.pubkeyAcceptedTypes);
+    if (info.hostKeyCheck != SiteInfo::HostKeyAsk)
+        advanced.text("hostkeycheck", hostKeyNames[info.hostKeyCheck]);
+    advanced.text("knownhosts", info.knownHostsFile);
+    advanced.number("loglevel", info.logLevel, 1);
+    advanced.addTo(element);
 }
 
-// Modal editor for one site's connection settings
+static QStringList allSessionNames();
+
 static bool editSiteDialog(QWidget *parent, const QString &title, SiteInfo &info)
 {
-    QDialog dlg(parent);
-    dlg.setWindowTitle(title);
-
-    QLineEdit *name = new QLineEdit(info.sitename, &dlg);
-    QLineEdit *host = new QLineEdit(info.hostname, &dlg);
-    QSpinBox *port = new QSpinBox(&dlg);
-    port->setRange(1, 65535);
-    port->setValue(info.port > 0 ? info.port : 22);
-    QLineEdit *user = new QLineEdit(info.username, &dlg);
-    QLineEdit *pass = new QLineEdit(info.password, &dlg);
-    pass->setEchoMode(QLineEdit::Password);
-    QLineEdit *key = new QLineEdit(info.privateKeyPath, &dlg);
-    QPushButton *browse = new QPushButton(QObject::tr("Browse..."), &dlg);
-    QHBoxLayout *keyLayout = new QHBoxLayout;
-    keyLayout->addWidget(key);
-    keyLayout->addWidget(browse);
-    QObject::connect(browse, &QPushButton::clicked, &dlg, [&dlg, key]() {
-        const QString file = QFileDialog::getOpenFileName(&dlg, QObject::tr("Select private key"), key->text());
-        if (!file.isEmpty())
-            key->setText(file);
-    });
-
-    QFormLayout *form = new QFormLayout;
-    form->addRow(QObject::tr("Name:"), name);
-    form->addRow(QObject::tr("Host:"), host);
-    form->addRow(QObject::tr("Port:"), port);
-    form->addRow(QObject::tr("Username:"), user);
-    form->addRow(QObject::tr("Password:"), pass);
-    form->addRow(QObject::tr("Private key:"), keyLayout);
-
-    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, [&dlg, host]() {
-        if (host->text().trimmed().isEmpty()) {
-            QMessageBox::warning(&dlg, dlg.windowTitle(), QObject::tr("Host must not be empty."));
-            return;
-        }
-        dlg.accept();
-    });
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
-    QVBoxLayout *layout = new QVBoxLayout(&dlg);
-    layout->addLayout(form);
-    layout->addWidget(buttons);
-    dlg.resize(400, dlg.sizeHint().height());
-
-    if (dlg.exec() != QDialog::Accepted)
-        return false;
-
-    info.hostname = host->text().trimmed();
-    info.sitename = name->text().trimmed().isEmpty() ? info.hostname : name->text().trimmed();
-    info.port = port->value();
-    info.username = user->text().trimmed();
-    info.password = pass->text();
-    info.privateKeyPath = key->text().trimmed();
-    return true;
+    QStringList names = allSessionNames();
+    names.removeAll(info.sitename);
+    return qssh::editSite(parent, title, info, names);
 }
 
 QString SiteTree::sitesFilePath()
@@ -213,6 +384,90 @@ static bool saveShared()
     if (!out.commit())
         return false;
     QFile::setPermissions(out.fileName(), QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    return true;
+}
+
+static QStringList allSessionNames()
+{
+    ensureLoaded(nullptr);
+    QStringList names;
+    QDomNodeList sites = sharedDoc().elementsByTagName(siteElement());
+    for (int i = 0; i < sites.size(); ++i)
+        names << sites.at(i).toElement().attribute(nameAttribute());
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
+static QDomElement findSiteElement(const QString &name)
+{
+    ensureLoaded(nullptr);
+    QDomNodeList sites = sharedDoc().elementsByTagName(siteElement());
+    for (int i = 0; i < sites.size(); ++i) {
+        QDomElement e = sites.at(i).toElement();
+        if (e.attribute(nameAttribute()).compare(name, Qt::CaseInsensitive) == 0)
+            return e;
+    }
+    return QDomElement();
+}
+
+void SiteTree::resolveJumpHosts(SiteInfo &info)
+{
+    info.jumpChain.clear();
+    const QStringList hops = info.jumpHosts.split(',', Qt::SkipEmptyParts);
+    for (QString spec : hops) {
+        spec = spec.trimmed();
+        if (spec.isEmpty())
+            continue;
+        JumpHost hop;
+        hop.label = spec;
+        QDomElement saved = findSiteElement(spec);
+        if (!saved.isNull()) {
+            const SiteInfo site = siteInfoFromElement(saved);
+            hop.hostname = site.hostname;
+            hop.port = site.port > 0 ? site.port : 22;
+            hop.username = site.username;
+            hop.password = site.password;
+            hop.privateKeyPath = site.privateKeyPath;
+            hop.certificatePath = site.certificatePath;
+        } else {
+            // [user@]host[:port], host may be [ipv6]
+            QString rest = spec;
+            const int at = rest.lastIndexOf('@');
+            if (at >= 0) {
+                hop.username = rest.left(at);
+                rest = rest.mid(at + 1);
+            }
+            if (rest.startsWith('[')) {
+                const int close = rest.indexOf(']');
+                hop.hostname = rest.mid(1, close - 1);
+                if (rest.mid(close + 1).startsWith(':'))
+                    hop.port = rest.mid(close + 2).toInt();
+            } else if (rest.count(':') == 1) {
+                hop.hostname = rest.section(':', 0, 0);
+                hop.port = rest.section(':', 1).toInt();
+            } else {
+                hop.hostname = rest;
+            }
+            if (hop.port <= 0)
+                hop.port = 22;
+        }
+        if (!hop.hostname.isEmpty())
+            info.jumpChain << hop;
+    }
+}
+
+bool SiteTree::storePassword(const QString &siteName, const QString &password)
+{
+    QDomElement element = findSiteElement(siteName);
+    if (element.isNull())
+        return false;
+    SiteInfo info = siteInfoFromElement(element);
+    info.password = password;
+    writeSiteElement(sharedDoc(), element, info);
+    if (!saveShared())
+        return false;
+    for (SiteTree *tree : allTrees())
+        tree->rebuild();
     return true;
 }
 

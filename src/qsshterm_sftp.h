@@ -5,8 +5,11 @@
 #include <libssh/sftp.h>
 #include <QtWidgets>
 #include <atomic>
+#include <memory>
 
 #include "qsshterm_common.h"
+
+namespace qssh { class Connection; }
 
 // One entry of a remote directory listing
 struct SftpEntry {
@@ -111,8 +114,7 @@ class QSSHTerm_Sftp_Session : public QObject
 {
     Q_OBJECT
 public:
-    QSSHTerm_Sftp_Session(const SiteInfo &info, std::atomic<int> *cancelGen)
-        : siteInfo(info), cancelGen(cancelGen) {}
+    QSSHTerm_Sftp_Session(const SiteInfo &info, std::atomic<int> *cancelGen);
     ~QSSHTerm_Sftp_Session() override;
 
 signals:
@@ -134,6 +136,7 @@ public slots:
     void close();
 
 private:
+    std::unique_ptr<qssh::Connection> connection;
     ssh_session session = nullptr;
     sftp_session sftp = nullptr;
     SiteInfo siteInfo;

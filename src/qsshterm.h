@@ -9,6 +9,9 @@
 #include <QSocketNotifier>
 #include "qsiteconfig.h"
 #include "qsshterm_common.h"
+#include <memory>
+
+namespace qssh { class Connection; class ForwardManager; }
 
 class QSSHSession;
 
@@ -49,8 +52,12 @@ public slots:
     void writeData(const QByteArray &data);
     void sessionError(int code);
     void sessionConnected();
+    /** Applies the font, colours and other per-site terminal settings. */
+    void applyTerminalSettings();
 
 signals:
+    /** The user typed the password at the prompt and ticked "Save password". */
+    void savePasswordRequested(QString siteName, QString password);
     void icon_change(QString termKey, SSHTermState state);
     void reconnect();
 
@@ -114,23 +121,33 @@ signals:
     void sessionError(int);
     void sessionConnected();
     void sessionInfo(QString info);
+    /** Password typed at the prompt, kept for SFTP and reconnects. */
+    void passwordEntered(QString password, bool save);
 
 private slots:
     void select_loop();
     void sshStateCheck();
+    void sendKeepAlive();
+    void sendStartupCommands();
 
 private:
     SiteInfo siteInfo;
     int columns;
     int lines;
 
+    std::unique_ptr<qssh::Connection> connection;
+    qssh::ForwardManager *forwards = nullptr;
     ssh_session session = nullptr;
     ssh_channel channel = nullptr;
     char buffer[64 * 1024];
     QTimer *timer = nullptr;
+    QTimer *keepAlive = nullptr;
     QSocketNotifier *read_notifier = nullptr;
+    bool wakePending = false;
 
     bool shell();
+    bool readChannel();
+    void scheduleRead();
     void fail(const QString &message);
     void emitText(const QString &text);
 };

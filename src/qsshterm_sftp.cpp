@@ -1,5 +1,6 @@
 #include "qsshterm_sftp.h"
 #include "qssh_helpers.h"
+#include "qsiteconfig.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -95,6 +96,7 @@ static QIcon themedIcon(const char *name, QStyle::StandardPixmap fallback)
 QSSHTerm_Sftp_Dialog::QSSHTerm_Sftp_Dialog(const SiteInfo &info, QWidget *parent)
     : QDialog(parent), siteInfo(info)
 {
+    SiteTree::resolveJumpHosts(siteInfo);
     qRegisterMetaType<SftpEntry>();
     qRegisterMetaType<QList<SftpEntry>>();
 
@@ -770,8 +772,7 @@ void QSSHTerm_Sftp_Session::disconnectSession()
         sftp = nullptr;
     }
     if (session) {
-        ssh_disconnect(session);
-        ssh_free(session);
+        connection->close();
         session = nullptr;
     }
 }
@@ -804,38 +805,16 @@ bool QSSHTerm_Sftp_Session::ensureConnected()
         return true;
     disconnectSession();
 
-    session = ssh_new();
-    if (!session) {
-        emit message(QStringLiteral("Unable to create SSH session"));
+    if (!connection) {
+        connection = std::make_unique<qssh::Connection>(siteInfo);
+        connection->notice = [this](const QString &text) { emit message(text); };
+    }
+    QString error;
+    if (!connection->open(&error)) {
+        emit message(error);
         return false;
     }
-
-    int verbosity = SSH_LOG_WARNING;
-    long timeout = 30;
-    qssh::applySiteOptions(session, siteInfo);
-    ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
-    ssh_options_set(session, SSH_OPTIONS_TIMEOUT, &timeout);
-
-    if (ssh_connect(session) != SSH_OK) {
-        emit message(QStringLiteral("Connection to host failed: %1").arg(QString::fromUtf8(ssh_get_error(session))));
-        disconnectSession();
-        return false;
-    }
-
-    QString hostMessage;
-    const bool trusted = qssh::verifyKnownHost(session, &hostMessage);
-    if (!hostMessage.isEmpty())
-        emit message(hostMessage);
-    if (!trusted) {
-        disconnectSession();
-        return false;
-    }
-
-    if (qssh::authenticate(session, siteInfo) != SSH_AUTH_SUCCESS) {
-        emit message(QStringLiteral("Authentication failed: %1").arg(QString::fromUtf8(ssh_get_error(session))));
-        disconnectSession();
-        return false;
-    }
+    session = connection->session();
 
     sftp = sftp_new(session);
     if (!sftp || sftp_init(sftp) != SSH_OK) {
@@ -856,11 +835,25 @@ bool QSSHTerm_Sftp_Session::ensureConnected()
     return true;
 }
 
+QSSHTerm_Sftp_Session::QSSHTerm_Sftp_Session(const SiteInfo &info, std::atomic<int> *cancelGen)
+    : siteInfo(info), cancelGen(cancelGen)
+{
+    // SFTP has no use for a 30 s+ hang on a dead host
+    if (siteInfo.connectTimeout <= 0)
+        siteInfo.connectTimeout = 30;
+}
+
 void QSSHTerm_Sftp_Session::connect_to()
 {
     QString home;
     if (ensureConnected()) {
-        if (char *p = sftp_canonicalize_path(sftp, ".")) {
+        QByteArray start = siteInfo.sftpStartDir.trimmed().toUtf8();
+        char *p = start.isEmpty() ? nullptr : sftp_canonicalize_path(sftp, start.constData());
+        if (!start.isEmpty() && !p)
+            emit message(QStringLiteral("Start folder %1 not found: %2").arg(siteInfo.sftpStartDir, lastError()));
+        if (!p)
+            p = sftp_canonicalize_path(sftp, ".");
+        if (p) {
             home = QString::fromUtf8(p);
             ssh_string_free_char(p);
         } else {
