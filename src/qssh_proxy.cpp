@@ -92,7 +92,13 @@ static socket_t connectDirect(const SiteInfo &site, const QString &host, int por
     const QByteArray service = QByteArray::number(port);
     const int rc = getaddrinfo(host.toUtf8().constData(), service.constData(), &hints, &result);
     if (rc != 0) {
-        *error = QStringLiteral("Cannot resolve %1: %2").arg(host, QString::fromLocal8Bit(gai_strerror(rc)));
+#ifdef _WIN32
+        // gai_strerror() returns a wide string in UNICODE builds
+        const QString reason = QString::fromLocal8Bit(gai_strerrorA(rc));
+#else
+        const QString reason = QString::fromLocal8Bit(gai_strerror(rc));
+#endif
+        *error = QStringLiteral("Cannot resolve %1: %2").arg(host, reason);
         return SSH_INVALID_SOCKET;
     }
 
