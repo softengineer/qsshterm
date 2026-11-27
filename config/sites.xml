@@ -2,20 +2,19 @@
 <sites>
     <folder name="Demo group">
         <site name="dev server">
-            <host address="dev.cosmoline.cloud" port="22"/>
-            <username>ubuntu</username>
-            <password>xxx</password>
+            <host address="dev.example.com" port="22"/>
+            <username>user</username>
         </site>
-        <site name="sshjump">
-            <host address="aknthc-gk1.t3.nz" port="22"/>
-            <username>davidf</username>
+        <site name="jump host">
+            <host address="jump.example.com" port="22"/>
+            <username>user</username>
         </site>
     </folder>
     <folder name="Demo Group 2">
-        <site name="192.168.1.13">
-            <host address="192.168.1.13" port="22"/>
+        <site name="192.0.2.10">
+            <host address="192.0.2.10" port="22"/>
             <username>admin</username>
-            <privatekey file="C:/Work/Aws/ec2.pem"/>
+            <privatekey file="~/.ssh/id_ed25519"/>
         </site>
     </folder>
 </sites>

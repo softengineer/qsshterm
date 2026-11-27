@@ -1,89 +1,154 @@
 # qsshterm
-Qt based cross platform SSH tab terminal
 
+A Qt 6 based, cross-platform SSH terminal with tabs, in the spirit of PuTTY
+and SecureCRT. It runs on Linux, Windows and macOS.
 
-<img width="897" height="590" alt="image" src="https://github.com/user-attachments/assets/0629cf74-eff5-4de5-a34c-436653b950d7" />
+<img width="897" height="590" alt="qsshterm screenshot" src="https://github.com/user-attachments/assets/0629cf74-eff5-4de5-a34c-436653b950d7" />
 
+## Features
 
+- VT100/xterm-style terminal emulation with search, zoom and selectable color schemes
+- Multiple sessions in tabs (duplicate, reconnect, close other tabs)
+- Session manager that keeps saved sites in a folder tree, plus Quick Connect
+- SFTP file manager for SSH sessions
+- Jump hosts, SOCKS4/SOCKS5/HTTP proxies and ProxyCommand
+- Local, remote and dynamic (`-L` / `-R` / `-D`) port forwarding, and agent forwarding
+- Reads `~/.ssh/config`
+- Light, dark and system UI themes
 
-- support VT100 like terminal
-- support multiple tab for each session
-- support SFTP for ssh session (developing)
-- tree session management
+## Dependencies
 
-The ssh tab termnial aims at working in Windows, Linux and Mac. This project is not standalone, it is based on other two opensource projects
-1. [qtermwidget](https://github.com/lxqt/qtermwidget) - vt100 emulator  
-   Notice: please use qtermwidget to compile in 3rdparty directory since original one doesn't support Windows platform.
-2. [libssh](https://www.libssh.org/) - the ssh library to support ssh protocol.
+qsshterm builds on two open-source projects:
 
-The project is aimed to provide qt based GUI to offer easy way to access SSH server like putty or securecrt.
+1. [qtermwidget](https://github.com/lxqt/qtermwidget), the terminal emulator widget.
+   Use the copy in `3rdparty/qtermwidget`. It is a Qt 6 port with Windows
+   support, which the upstream version does not have.
+2. [libssh](https://www.libssh.org/) 0.9 or newer, for the SSH protocol.
 
-current version only works on Linux, Windows (I haven't tested it on Mac)
+You also need Qt 6.5 or newer, including the Qt SVG module.
 
-Installation and compile:
+## Download
 
-In Linux (Qt 6.5+, libssh 0.9+):
+Every push to `master` builds packages for Windows (x64) and macOS (Apple
+Silicon) with GitHub Actions (`.github/workflows/build.yml`). You can download
+them from the Artifacts section of the workflow run. When a `v*` tag is
+pushed, the packages are also attached to a GitHub release.
 
-1. Install dependencies (Debian/Ubuntu):
+The macOS app is not signed. The first time you open it, right-click the app
+and choose **Open**.
 
-       sudo apt install qt6-base-dev qt6-tools-dev cmake g++ libssh-dev
+## Building on Linux
 
-2. Build and install the bundled qtermwidget (Qt 6 port). To install without
-   root, use a prefix such as ~/.local:
+1. Install the dependencies (Debian/Ubuntu):
 
-       cmake -S 3rdparty/qtermwidget -B build-qtw -DCMAKE_BUILD_TYPE=Release \
-             -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_INSTALL_RPATH=$HOME/.local/lib
-       cmake --build build-qtw -j
-       cmake --install build-qtw
+   ```sh
+   sudo apt install qt6-base-dev libqt6svg6-dev qt6-tools-dev cmake g++ libssh-dev
+   ```
 
-   (Omit the two prefix/rpath options and run the install with sudo to install
-   into /usr/local instead.)
+2. Build and install the bundled qtermwidget. To install without root, use a
+   prefix such as `~/.local`:
+
+   ```sh
+   cmake -S 3rdparty/qtermwidget -B build-qtw -DCMAKE_BUILD_TYPE=Release \
+         -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_INSTALL_RPATH=$HOME/.local/lib
+   cmake --build build-qtw -j
+   cmake --install build-qtw
+   ```
+
+   To install into `/usr/local` instead, leave out the two prefix/rpath
+   options and run the install step with `sudo`. The install also puts the
+   color schemes and keyboard layouts under `<prefix>/share/qtermwidget6`,
+   which is where qtermwidget looks for them.
 
 3. Build qsshterm:
 
-       mkdir build-app && cd build-app
-       qmake6 ../qsshterm.pro CONFIG+=release "INCLUDEPATH+=$HOME/.local/include" \
-              "LIBS+=-L$HOME/.local/lib" "QMAKE_RPATHDIR+=$HOME/.local/lib"
-       make -j
-       cd ..
+   ```sh
+   mkdir build-app && cd build-app
+   qmake6 ../qsshterm.pro CONFIG+=release "INCLUDEPATH+=$HOME/.local/include" \
+          "LIBS+=-L$HOME/.local/lib" "QMAKE_RPATHDIR+=$HOME/.local/lib"
+   make -j
+   cd ..
+   ```
 
-4. Install. qsshterm loads icon/ and config/sites.xml relative to the current
-   directory, so install it together with those folders and start it through a
-   small launcher:
+4. Install the binary. Icons are compiled into the executable, so it does not
+   need any files next to it:
 
-       D=$HOME/.local/share/qsshterm
-       mkdir -p $D/config $HOME/.local/bin
-       cp build-app/qsshterm $D/
-       cp -r icon color-schemes kb-layouts $D/
-       [ -f $D/config/sites.xml ] || cp config/sites.xml $D/config/
-       printf '#!/bin/sh\ncd "%s" && exec ./qsshterm "$@"\n' "$D" > $HOME/.local/bin/qsshterm
-       chmod +x $HOME/.local/bin/qsshterm
+   ```sh
+   install -Dm755 build-app/qsshterm $HOME/.local/bin/qsshterm
+   ```
 
-   Then run `qsshterm` (make sure ~/.local/bin is on your PATH). Saved sites
-   are stored in ~/.local/share/qsshterm/config/sites.xml.
+   Then run `qsshterm`. Make sure `~/.local/bin` is on your `PATH`.
 
-   No root to install libssh-dev? If the libssh runtime (libssh-4) is already
-   installed, matching headers are enough: extract the libssh-dev package
-   (`apt download libssh-dev && dpkg-deb -x libssh-dev_*.deb libssh`), copy
-   libssh/usr/include/libssh to ~/.local/include/, and link
-   ~/.local/lib/libssh.so to /usr/lib/x86_64-linux-gnu/libssh.so.4.
+**No root access to install libssh-dev?** If the libssh runtime (`libssh-4`)
+is already installed, you only need the matching headers. Extract the
+libssh-dev package (`apt download libssh-dev && dpkg-deb -x libssh-dev_*.deb libssh`),
+copy `libssh/usr/include/libssh` to `~/.local/include/`, and create a symlink
+from `~/.local/lib/libssh.so` to `/usr/lib/x86_64-linux-gnu/libssh.so.4`.
 
-Host keys are checked against ~/.ssh/known_hosts: unknown hosts are added on
-first connect, and connections to hosts whose key has changed are refused.
+## Building on Windows
 
-Prebuilt packages: every push to master builds Windows (x64) and macOS
-(Apple Silicon) packages with GitHub Actions (`.github/workflows/build.yml`);
-download them from the run's Artifacts. Pushing a `v*` tag attaches them to a
-GitHub release. The macOS app is unsigned: right-click > Open the first time.
+The CI uses the [MSYS2](https://www.msys2.org/) UCRT64 toolchain. See
+`.github/workflows/build.yml` for the exact steps, including packaging.
 
-Icons and the built-in icon themes (a Breeze subset, see `icons/README.md`)
-are compiled into the executable, so the program no longer depends on the
-working directory.
+1. In an MSYS2 UCRT64 shell, install the toolchain and libraries:
 
-In Windows (the CI recipe uses MSYS2 UCRT64; see the workflow for exact steps):
-1. Install Qt 6 (6.5 or newer) with mingw
-2. Install openssl
-3. Install CMake
-4. Compile libssh and the bundled qtermwidget (3rdparty/qtermwidget) with CMake
-5. in qsshterm directory, qmake6 qsshterm.pro && mingw32-make
+   ```sh
+   pacman -S --needed mingw-w64-ucrt-x86_64-{toolchain,cmake,ninja,qt6-base,qt6-svg,qt6-tools,libssh} make
+   ```
 
+2. Build the bundled qtermwidget:
+
+   ```sh
+   cmake -S 3rdparty/qtermwidget -B build-qtw -G Ninja \
+         -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/deps"
+   cmake --build build-qtw && cmake --install build-qtw
+   ```
+
+3. Build qsshterm:
+
+   ```sh
+   mkdir build-app && cd build-app
+   qmake6 ../qsshterm.pro CONFIG+=release \
+          "INCLUDEPATH+=$PWD/../deps/include" "LIBS+=-L$PWD/../deps/lib"
+   make -j
+   ```
+
+4. Copy the `color-schemes` and `kb-layouts` folders and
+   `libqtermwidget6.dll` next to `qsshterm.exe`, then run `windeployqt6` on
+   the executable.
+
+## Building on macOS
+
+```sh
+brew install qt libssh ninja
+cmake -S 3rdparty/qtermwidget -B build-qtw -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" -DCMAKE_INSTALL_PREFIX="$PWD/deps"
+cmake --build build-qtw && cmake --install build-qtw
+
+mkdir build-app && cd build-app
+"$(brew --prefix qt)/bin/qmake" ../qsshterm.pro CONFIG+=release \
+      "INCLUDEPATH+=$PWD/../deps/include $(brew --prefix libssh)/include" \
+      "LIBS+=-L$PWD/../deps/lib -L$(brew --prefix libssh)/lib"
+make -j
+```
+
+To make a self-contained app, copy `color-schemes` and `kb-layouts` into
+`qsshterm.app/Contents/Resources/` and run `macdeployqt` on the bundle, as
+the CI does.
+
+## Configuration and security
+
+- Saved sessions are stored in `~/.qsshterm/sites.xml`. On first start, the
+  file is created from `config/sites.xml` next to the program (or in the
+  working directory), if that file exists.
+- **Saved passwords are stored unencrypted** in `sites.xml`. Use key-based
+  authentication or leave the password field empty, and qsshterm will
+  prompt for the password when it connects.
+- Host keys are checked against `~/.ssh/known_hosts`. Each site can set its
+  own known_hosts file. You are asked to confirm unknown hosts. Connections to
+  hosts whose key has changed are refused.
+
+## License
+
+LGPL-3.0. See [LICENSE](LICENSE). The bundled Breeze icons are LGPL-3.0-or-later
+(see `icons/README.md`), and qtermwidget has its own license in `3rdparty/qtermwidget`.
