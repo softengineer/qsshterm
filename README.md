@@ -1,6 +1,10 @@
 # qsshterm
 Qt based cross platform SSH tab terminal
 
+
+<img width="896" height="606" alt="image" src="https://github.com/user-attachments/assets/7c9dd5c6-8fb6-4c5d-bc1f-f52729e33a24" />
+
+
 - support VT100 like terminal
 - support multiple tab for each session
 - support SFTP for ssh session (developing)
